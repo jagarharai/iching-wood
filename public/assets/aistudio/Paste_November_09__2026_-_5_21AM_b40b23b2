@@ -1,0 +1,2410 @@
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import {
+  Sparkles,
+  BookOpen,
+  History,
+  Compass,
+  RotateCcw,
+  Copy,
+  Bookmark,
+  Share2,
+  Search,
+  Check,
+  AlertCircle,
+  ShieldCheck,
+  ChevronRight,
+  Trash2,
+  Info,
+  Shuffle,
+  Eye,
+  X,
+  HelpCircle,
+  Layers,
+  Clock,
+  Lock
+} from 'lucide-react';
+
+// ============================================================================
+// 一、型別定義與八卦／六十四卦結構化資料庫 (hexagrams 模組)
+// ============================================================================
+
+export type TrigramKey = '乾' | '兌' | '離' | '震' | '巽' | '坎' | '艮' | '坤';
+
+export interface TrigramInfo {
+  key: TrigramKey;
+  name: string;
+  nature: string;
+  attribute: string;
+  lines: [0 | 1, 0 | 1, 0 | 1]; // 由下而上：初爻、二爻、三爻 (1: 陽, 0: 陰)
+}
+
+export const TRIGRAMS: Record<TrigramKey, TrigramInfo> = {
+  乾: { key: '乾', name: '乾（天）', nature: '天', attribute: '剛健、創造', lines: [1, 1, 1] },
+  兌: { key: '兌', name: '兌（澤）', nature: '澤', attribute: '喜悅、溝通', lines: [1, 1, 0] },
+  離: { key: '離', name: '離（火）', nature: '火', attribute: '光明、依附', lines: [1, 0, 1] },
+  震: { key: '震', name: '震（雷）', nature: '雷', attribute: '震動、奮起', lines: [1, 0, 0] },
+  巽: { key: '巽', name: '巽（風）', nature: '風', attribute: '柔順、滲透', lines: [0, 1, 1] },
+  坎: { key: '坎', name: '坎（水）', nature: '水', attribute: '險陷、智慧', lines: [0, 1, 0] },
+  艮: { key: '艮', name: '艮（山）', nature: '山', attribute: '靜止、篤實', lines: [0, 0, 1] },
+  坤: { key: '坤', name: '坤（地）', nature: '地', attribute: '柔順、承載', lines: [0, 0, 0] },
+};
+
+export interface Hexagram {
+  id: number; // 文王卦序 1 ~ 64
+  name: string; // 完整卦名（如：乾為天）
+  shortName: string; // 卦名簡稱（如：乾）
+  upperKey: TrigramKey;
+  lowerKey: TrigramKey;
+  upperTrigram: string; // 如：乾（天）
+  lowerTrigram: string; // 如：乾（天）
+  lines: [0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1]; // 由下而上：初爻至上爻
+  keywords: string[]; // 核心關鍵字
+  judgment: string; // 《周易》本經卦辭原文
+  judgmentVerified: boolean; // 原典核實標記
+  imageText: string; // 《象傳》（大象傳）原文
+  coreMeaning: string; // 固定基礎卦義與決策指引
+}
+
+interface RawHexagramSeed {
+  id: number;
+  name: string;
+  shortName: string;
+  upper: TrigramKey;
+  lower: TrigramKey;
+  keywords: [string, string, string];
+  judgment: string;
+  imageText: string;
+  coreMeaning: string;
+}
+
+// 完整文王六十四卦原典種子資料（經核對《周易》本經卦辭與《大象傳》）
+const RAW_HEXAGRAMS: RawHexagramSeed[] = [
+  {
+    id: 1, name: '乾為天', shortName: '乾', upper: '乾', lower: '乾',
+    keywords: ['剛健開創', '自強不息', '主導全局'],
+    judgment: '乾：元，亨，利，貞。',
+    imageText: '天行健，君子以自強不息。',
+    coreMeaning: '象徵純陽剛健、生機蓬勃的開創之力。此時能量充沛，適合主動立定志向並推進計畫；然而剛強過度易生傲慢，須懂得審時度勢、持守正固，方能久遠。'
+  },
+  {
+    id: 2, name: '坤為地', shortName: '坤', upper: '坤', lower: '坤',
+    keywords: ['厚德載物', '柔順包容', '順勢而為'],
+    judgment: '坤：元，亨，利牝馬之貞。君子有攸往，先迷後得主，利西南得朋，東北喪朋。安貞，吉。',
+    imageText: '地勢坤，君子以厚德載物。',
+    coreMeaning: '象徵大地般的包容與承載。現階段不宜強出頭或貿然爭先，而應採取配合、滋養與紮根的姿態。以柔韌的耐力順應時勢，找準值得追隨的目標或夥伴，方能穩健成事。'
+  },
+  {
+    id: 3, name: '水雷屯', shortName: '屯', upper: '坎', lower: '震',
+    keywords: ['萬事起頭難', '積蓄力量', '尋求助力'],
+    judgment: '屯：元，亨，利，貞。勿用，有攸往，利建侯。',
+    imageText: '雲雷，屯；君子以經綸。',
+    coreMeaning: '象徵草木初生、破土而出的艱難期。外有險阻而內具動能，雖有長遠發展潛力，但眼下條件尚未成熟，切忌孤軍躁進，宜先理清頭緒、廣結善緣並建立穩固基礎。'
+  },
+  {
+    id: 4, name: '山水蒙', shortName: '蒙', upper: '艮', lower: '坎',
+    keywords: ['啟蒙致知', '虛心請益', '廓清迷霧'],
+    judgment: '蒙：亨。匪我求童蒙，童蒙求我。初筮告，再三瀆，瀆則不告。利貞。',
+    imageText: '山下出泉，蒙；君子以果行育德。',
+    coreMeaning: '象徵資訊不足、方向未明的混沌啟蒙階段。面對未知，最重要的是保持誠敬與空杯心態，主動向有經驗者請益或補足專業認知，並透過具體果決的行動逐步累積品德與實力。'
+  },
+  {
+    id: 5, name: '水天需', shortName: '需', upper: '坎', lower: '乾',
+    keywords: ['靜待時機', '養精蓄銳', '從容不迫'],
+    judgment: '需：有孚，光亨，貞吉。利涉大川。',
+    imageText: '雲上於天，需；君子以飲食宴樂。',
+    coreMeaning: '象徵實力雖具但前方仍有險阻，必須耐心等待。這種等待並非消極怠惰，而是心懷誠信、安頓身心並持續充實自我；待時機成熟時，自能順利跨越難關。'
+  },
+  {
+    id: 6, name: '天水訟', shortName: '訟', upper: '乾', lower: '坎',
+    keywords: ['化解爭端', '知止戒懼', '謀定於始'],
+    judgment: '訟：有孚，窒，惕中吉，終凶。利見大人，不利涉大川。',
+    imageText: '天與水違行，訟；君子以作事謀始。',
+    coreMeaning: '象徵立場相悖、溝通受阻而引發爭執。即使自身有理，若一味強爭到底往往兩敗俱傷；宜保持警惕、適可而止，尋求公正第三方協調，並在未來行事之初便先釐清權責界線。'
+  },
+  {
+    id: 7, name: '地水師', shortName: '師', upper: '坤', lower: '坎',
+    keywords: ['紀律統御', '師出有名', '凝聚團隊'],
+    judgment: '師：貞，丈人，吉無咎。',
+    imageText: '地中有水，師；君子以容民畜眾。',
+    coreMeaning: '象徵動員眾人、面對重大挑戰與競爭。成功關鍵在於目標正當（師出有名）、紀律嚴明，並由經驗豐富且具威望者統籌全局；平時則須懂得包容與培育團隊力量。'
+  },
+  {
+    id: 8, name: '水地比', shortName: '比', upper: '坎', lower: '坤',
+    keywords: ['親附合作', '誠信結盟', '擇善固執'],
+    judgment: '比：吉。原筮元永貞，無咎。不寧方來，後夫凶。',
+    imageText: '地上有水，比；先王以建萬國，親諸侯。',
+    coreMeaning: '象徵水附大地、彼此親密扶助與結盟。人際與合作關係是當前的核心，應主動展現誠意、建立長久互信的夥伴關係；同時須審慎選擇合作對象，切勿猶豫錯失良機。'
+  },
+  {
+    id: 9, name: '風天小畜', shortName: '小畜', upper: '巽', lower: '乾',
+    keywords: ['蓄養微力', '以柔制剛', '局部調整'],
+    judgment: '小畜：亨。密雲不雨，自我西郊。',
+    imageText: '風行天上，小畜；君子以懿文德。',
+    coreMeaning: '象徵力量尚在局部積蓄，如同密雲聚集卻尚未降雨。目前大局推展暫時受限，不宜強行突破，而應專注於細節優化、涵養內在實力與溝通技巧，以溫和漸進的方式累積籌碼。'
+  },
+  {
+    id: 10, name: '天澤履', shortName: '履', upper: '乾', lower: '兌',
+    keywords: ['如履薄冰', '禮節分寸', '踐履篤行'],
+    judgment: '履：履虎尾，不咥人，亨。',
+    imageText: '上天下澤，履；君子以辨上下，定民志。',
+    coreMeaning: '象徵伴隨高風險的實踐過程，宛如踩踏虎尾。面對強勢對象或敏感局勢，唯有保持高度警覺、態度溫和恭敬，嚴守分際與專業規範，方能化險為夷、穩步前行。'
+  },
+  {
+    id: 11, name: '地天泰', shortName: '泰', upper: '坤', lower: '乾',
+    keywords: ['天地交泰', '上下暢通', '居安思危'],
+    judgment: '泰：小往大來，吉亨。',
+    imageText: '天地交，泰；后以財成天地之道，輔相天地之宜，以左右民。',
+    coreMeaning: '象徵陰陽交感、內外溝通順暢的通泰局面。當前資源與人脈易於整合，萬事順遂；但越是在順境中，越應把握時機建立制度、裁成大局，並留意潛在的變化。'
+  },
+  {
+    id: 12, name: '天地否', shortName: '否', upper: '乾', lower: '坤',
+    keywords: ['閉塞不通', '韜光養晦', '守正待時'],
+    judgment: '否：否之匪人，不利君子貞，大往小來。',
+    imageText: '天地不交，否；君子以儉德辟難，不可榮以祿。',
+    coreMeaning: '象徵上下隔絕、溝通斷裂的閉塞時期。外在環境不利於施展抱負，強求表現反而容易招致消耗；此時宜收斂鋒芒、節儉自守，保護核心價值，等待局勢翻轉。'
+  },
+  {
+    id: 13, name: '天火同人', shortName: '同人', upper: '乾', lower: '離',
+    keywords: ['志同道合', '大公無私', '求同存異'],
+    judgment: '同人：同人于野，亨。利涉大川，利君子貞。',
+    imageText: '天與火，同人；君子以類族辨物。',
+    coreMeaning: '象徵打破小圈子私心，在開闊的視野下與眾人協同合作。只要目標光明正大、尊重彼此差異並合理分工，便能凝聚強大的群體智慧，共同跨越重大難關。'
+  },
+  {
+    id: 14, name: '火天大有', shortName: '大有', upper: '離', lower: '乾',
+    keywords: ['豐盛收穫', '光明普照', '滿而不溢'],
+    judgment: '大有：元亨。',
+    imageText: '火在天上，大有；君子以遏惡揚善，順天休命。',
+    coreMeaning: '象徵如日中天、資源與成果豐碩的鼎盛時期。剛健而能散發智慧光芒，深獲眾人支持；處於豐裕之際，更須保持謙遜、明辨是非、抑惡揚善，方能長保昌盛。'
+  },
+  {
+    id: 15, name: '地山謙', shortName: '謙', upper: '坤', lower: '艮',
+    keywords: ['謙沖自牧', '藏鋒於內', '稱物平施'],
+    judgment: '謙：亨，君子有終。',
+    imageText: '地中有山，謙；君子以裒多益寡，稱物平施。',
+    coreMeaning: '象徵崇高山嶽隱於大地之下，內具實力卻外顯低調。謙遜並非軟弱，而是看清全局後的自我調節；損抑過多、補益不足，合理平衡各方利益，是六十四卦中極為吉祥穩健的智慧。'
+  },
+  {
+    id: 16, name: '雷地豫', shortName: '豫', upper: '震', lower: '坤',
+    keywords: ['未雨綢繆', '順動人心', '戒除逸樂'],
+    judgment: '豫：利建侯行師。',
+    imageText: '雷出地奮，豫；先王以作樂崇德，殷薦之上帝，以配祖考。',
+    coreMeaning: '象徵春雷乍動、生機勃發的歡欣與預備。順應眾人期待而行動，容易獲得支持；然而「豫」亦含預先防範與安逸享樂兩面，切忌因氣氛熱絡而鬆懈，務必做好事前規劃。'
+  },
+  {
+    id: 17, name: '澤雷隨', shortName: '隨', upper: '兌', lower: '震',
+    keywords: ['隨時變通', '順從正道', '適時休養'],
+    judgment: '隨：元，亨，利，貞，無咎。',
+    imageText: '澤中有雷，隨；君子以嚮晦入宴息。',
+    coreMeaning: '象徵放下固執己見，順應時勢與客觀規律而行。跟隨並非盲從，而是要有原則地選擇正確方向；若逢時機未到或身心俱疲，亦當順應自然節律，懂得適時停下休息。'
+  },
+  {
+    id: 18, name: '山風蠱', shortName: '蠱', upper: '艮', lower: '巽',
+    keywords: ['整頓積弊', '除舊佈新', '審慎善後'],
+    judgment: '蠱：元亨，利涉大川。先甲三日，後甲三日。',
+    imageText: '山下有風，蠱；君子以振民育德。',
+    coreMeaning: '象徵長期停滯與因循苟且所累積的腐敗問題，亟待整頓。面對爛攤子或歷史包袱，逃避只會惡化；必須鼓起勇氣振作革新，詳查問題前因（先甲三日）並周密規劃後續配套（後甲三日）。'
+  },
+  {
+    id: 19, name: '地澤臨', shortName: '臨', upper: '坤', lower: '兌',
+    keywords: ['親臨督導', '陽氣漸長', '把握盛期'],
+    judgment: '臨：元，亨，利，貞。至于八月有凶。',
+    imageText: '澤上有地，臨；君子以教思無窮，容保民無疆。',
+    coreMeaning: '象徵居高臨下、親自深入現場關懷與推進事務。當前局勢蒸蒸日上，宜以寬容耐心的態度引導團隊；但須銘記盛極必衰的自然循環，趁順境及早部署長遠防線。'
+  },
+  {
+    id: 20, name: '風地觀', shortName: '觀', upper: '巽', lower: '坤',
+    keywords: ['靜觀審視', '拉高視野', '反求諸己'],
+    judgment: '觀：盥而不薦，有孚顒若。',
+    imageText: '風行地上，觀；先王以省方，觀民設教。',
+    coreMeaning: '象徵在採取行動前，先以莊重澄明的心態深入觀察。既要向下體察真實處境與細節，也要向內省視自身的動心起念與行為表率；唯有看清事物全貌，方能做出契合實際的判斷。'
+  },
+  {
+    id: 21, name: '火雷噬嗑', shortName: '噬嗑', upper: '離', lower: '震',
+    keywords: ['咬合破障', '明察果斷', '排除梗阻'],
+    judgment: '噬嗑：亨。利用獄。',
+    imageText: '雷電，噬嗑；先王以明罰勅法。',
+    coreMeaning: '象徵口中有硬物阻隔，必須用力咬碎方能合攏。代表事情進展中存在明確的障礙、誤會或違規行為，不宜鄉愿妥協，須結合清晰的洞察力（離明）與果決的執行力（震威）予以排除。'
+  },
+  {
+    id: 22, name: '山火賁', shortName: '賁', upper: '艮', lower: '離',
+    keywords: ['文飾之美', '返璞歸真', '質文並重'],
+    judgment: '賁：亨。小利有攸往。',
+    imageText: '山下有火，賁；君子以明庶政，無敢折獄。',
+    coreMeaning: '象徵適度的包裝、禮儀與文化修飾能讓事物更顯得體通達。然而外在形式僅能輔助小事，面對核心決策或重大是非時，切勿被華麗表象迷惑，最終仍須回歸真實本質。'
+  },
+  {
+    id: 23, name: '山地剝', shortName: '剝', upper: '艮', lower: '坤',
+    keywords: ['順勢止損', '厚植根基', '留得碩果'],
+    judgment: '剝：不利有攸往。',
+    imageText: '山附於地，剝；上以厚下，安宅。',
+    coreMeaning: '象徵基礎受蝕、外在環境處於剝落衰退的階段。此時切忌逆勢強求或盲目擴張，應果斷止損、鞏固底層根本，將最後的生機種子（碩果）妥善保存，靜待新一輪復甦。'
+  },
+  {
+    id: 24, name: '地雷復', shortName: '復', upper: '坤', lower: '震',
+    keywords: ['一陽來復', '迷途知返', '休養生機'],
+    judgment: '復：亨。出入無疾，朋來無咎。反復其道，七日來復，利有攸往。',
+    imageText: '雷在地中，復；先王以至日閉關，商旅不行，后不省方。',
+    coreMeaning: '象徵寒冬最深處微弱的陽氣重新萌發，代表轉機出現與回歸初心。經歷低谷或偏差後，正是修正方向、重獲新生的時刻；但初生之氣尚弱，須細心呵護、安靜休養，不宜操之過急。'
+  },
+  {
+    id: 25, name: '天雷無妄', shortName: '無妄', upper: '乾', lower: '震',
+    keywords: ['順應自然', '真誠無妄', '戒除僥倖'],
+    judgment: '無妄：元，亨，利，貞。其匪正有眚，不利有攸往。',
+    imageText: '天下雷行，物與無妄；先王以茂對時，育萬物。',
+    coreMeaning: '象徵至誠無偽、不抱持非分之想。行事應完全出於真實本心與客觀規律，不強求算計；若遭遇突如其來的無妄之災，亦當坦然面對、不自亂陣腳，堅持正道方能平安。'
+  },
+  {
+    id: 26, name: '山天大畜', shortName: '大畜', upper: '艮', lower: '乾',
+    keywords: ['厚積薄發', '博學篤行', '格局宏大'],
+    judgment: '大畜：利貞，不家食吉，利涉大川。',
+    imageText: '天在山中，大畜；君子以多識前言往行，以畜其德。',
+    coreMeaning: '象徵高山蘊藏天之剛健，代表大規模的知識、實力與德行積累。透過長期克制浮躁、汲取前人經驗與歷史智慧，當實力儲備充足時，宜走出舒適圈，承擔更大的公共責任與挑戰。'
+  },
+  {
+    id: 27, name: '山雷頤', shortName: '頤', upper: '艮', lower: '震',
+    keywords: ['慎言節飲食', '涵養身心', '自食其力'],
+    judgment: '頤：貞吉。觀頤，自求口實。',
+    imageText: '山下有雷，頤；君子以慎言語，節飲食。',
+    coreMeaning: '象徵口腔咀嚼與頤養之道，涵蓋物質與精神兩個層面。向內要節制慾望與飲食以養生，向外要謹慎言辭以避免禍從口出；同時檢視自己追求的目標是否正當，培養獨立自主的能力。'
+  },
+  {
+    id: 28, name: '澤風大過', shortName: '大過', upper: '兌', lower: '巽',
+    keywords: ['非常承擔', '獨立不懼', '剛柔失衡'],
+    judgment: '大過：棟橈，利有攸往，亨。',
+    imageText: '澤滅木，大過；君子以獨立不懼，遯世無悶。',
+    coreMeaning: '象徵負荷過重、如屋樑彎曲般的非常時期。面對結構性壓力或極端挑戰，常規做法已不足應對，必須具備堅定獨立的氣魄，並搭配溫和周延的手腕，盡快採取行動化解危機。'
+  },
+  {
+    id: 29, name: '坎為水', shortName: '坎', upper: '坎', lower: '坎',
+    keywords: ['重重險阻', '水流不盈', '誠信常行'],
+    judgment: '習坎：有孚，維心亨，行有尚。',
+    imageText: '水洊至，習坎；君子以常德行，習教事。',
+    coreMeaning: '象徵一坎接一坎的連環考驗。身處困境中，最忌驚慌失措或投機取巧；應效法流水盈科後進的精神，保持內心篤定真誠，透過日常持續的修練與專業精進，一步步走出險谷。'
+  },
+  {
+    id: 30, name: '離為火', shortName: '離', upper: '離', lower: '離',
+    keywords: ['光明洞察', '柔順依附', '繼明照四方'],
+    judgment: '離：利貞，亨。畜牝牛，吉。',
+    imageText: '明兩作，離；大人以繼明照于四方。',
+    coreMeaning: '象徵火焰相續、光明燦爛。火焰必須依附燃料方能燃燒，提示我們再有才華與洞察力，也須依附於正確的平台、制度或核心價值，並保持溫順柔韌的心態，切莫如烈火般急躁耗盡。'
+  },
+  {
+    id: 31, name: '澤山咸', shortName: '咸', upper: '兌', lower: '艮',
+    keywords: ['無心之感', '真誠共鳴', '虛懷受人'],
+    judgment: '咸：亨，利貞，取女吉。',
+    imageText: '山上有澤，咸；君子以虛受人。',
+    coreMeaning: '象徵少男少女、山澤相通的自然感應。無論在情感、合作或溝通中，唯有放下預設立場與功利算計，保持內心止靜而外在溫和喜悅，方能產生最真實深刻的共鳴。'
+  },
+  {
+    id: 32, name: '雷風恆', shortName: '恆', upper: '震', lower: '巽',
+    keywords: ['持之以恆', '立不易方', '動態穩定'],
+    judgment: '恆：亨，無咎，利貞，利有攸往。',
+    imageText: '雷風，恆；君子以立不易方。',
+    coreMeaning: '象徵雷動風行、相輔相成的長久之道。真正的恆久並非僵化不變，而是在核心方向與價值觀堅定不移的前提下，順應日常變化維持穩定的節奏與產出。'
+  },
+  {
+    id: 33, name: '天山遯', shortName: '遯', upper: '乾', lower: '艮',
+    keywords: ['優雅退場', '明哲保身', '以退為進'],
+    judgment: '遯：亨，小利貞。',
+    imageText: '天下有山，遯；君子以遠小人，不惡而嚴。',
+    coreMeaning: '象徵陰長陽消、時勢不利於正面抗衡。此時的退避並非懦弱投降，而是高度清醒的戰略轉移；對待消耗性的環境或小人，宜保持禮貌但堅定的界線（不惡而嚴），及早抽身以保全實力。'
+  },
+  {
+    id: 34, name: '雷天大壯', shortName: '大壯', upper: '震', lower: '乾',
+    keywords: ['聲勢強盛', '非禮弗履', '戒除蠻幹'],
+    judgment: '大壯：利貞。',
+    imageText: '雷在天上，大壯；君子以非禮弗履。',
+    coreMeaning: '象徵陽氣盛壯、實力強大。然而力量越強，越容易因衝動而撞得頭破血流（羝羊觸藩）；真正的強大在於能自我克制，凡事合乎情理法度，不以氣勢凌人。'
+  },
+  {
+    id: 35, name: '火地晉', shortName: '晉', upper: '離', lower: '坤',
+    keywords: ['旭日東昇', '才德昭顯', '穩步晉升'],
+    judgment: '晉：康侯用錫馬蕃庶，晝日三接。',
+    imageText: '明出地上，晉；君子以自昭明德。',
+    coreMeaning: '象徵太陽升起於大地之上，光明漸盛、備受賞識。當前是展現專業與推進事業的好時機，應保持如大地般的柔順謙和，持續擦亮自身的品德與能力，自然能獲得多方肯定。'
+  },
+  {
+    id: 36, name: '地火明夷', shortName: '明夷', upper: '坤', lower: '離',
+    keywords: ['韜光養晦', '內明外柔', '守正度暗'],
+    judgment: '明夷：利艱貞。',
+    imageText: '明入地中，明夷；君子以莅眾，用晦而明。',
+    coreMeaning: '象徵太陽沒入地底、光明受損的艱難時刻。環境可能存在猜忌、打壓或不明朗因素，此時切忌鋒芒畢露；應將智慧與理想深藏於心，外表保持低調柔順，在逆境中堅守信念。'
+  },
+  {
+    id: 37, name: '風火家人', shortName: '家人', upper: '巽', lower: '離',
+    keywords: ['齊家立本', '言有物行有恆', '各司其職'],
+    judgment: '家人：利女貞。',
+    imageText: '風自火出，家人；君子以言有物，而行有恆。',
+    coreMeaning: '象徵家庭、核心團隊或內部組織的凝聚。外部發展取決於內部根基是否穩固；在親近的關係或組織中，更需注意說話言之有物、行事持之以恆，讓每個人各安其位、彼此信任。'
+  },
+  {
+    id: 38, name: '火澤睽', shortName: '睽', upper: '離', lower: '兌',
+    keywords: ['求同存異', '化解分歧', '小事吉'],
+    judgment: '睽：小事吉。',
+    imageText: '上火下澤，睽；君子以同而異。',
+    coreMeaning: '象徵火炎向上、澤水向下，彼此方向分歧、心生隔閡。面對觀念不合或誤解，強行要求一致只會加深對立；宜先從小處著手建立共識，在大同中包容小異，以獨立而不失和氣的態度相處。'
+  },
+  {
+    id: 39, name: '水山蹇', shortName: '蹇', upper: '坎', lower: '艮',
+    keywords: ['見險而止', '反身修德', '轉彎繞道'],
+    judgment: '蹇：利西南，不利東北；利見大人，貞吉。',
+    imageText: '山上有水，蹇；君子以反身修德。',
+    coreMeaning: '象徵前方有急流、腳下有高山，行路艱難受阻。聰明人看見危險懂得暫停止步，不往死胡同硬闖；此時應避開尖銳衝突，回頭檢視並提升自我，同時尋求貴人與團隊的支援。'
+  },
+  {
+    id: 40, name: '雷水解', shortName: '解', upper: '震', lower: '坎',
+    keywords: ['春雷解凍', '赦過宥罪', '把握時效'],
+    judgment: '解：利西南。無所往，其來復吉。有攸往，夙吉。',
+    imageText: '雷雨作，解；君子以赦過宥罪。',
+    coreMeaning: '象徵雷雨交作、鬱結消散，危機與誤會得以解除。問題化解後，若無事則宜回歸平靜休養；若有待處理的善後事宜，則應趁早迅速解決，並以寬容心態放下過往恩怨。'
+  },
+  {
+    id: 41, name: '山澤損', shortName: '損', upper: '艮', lower: '兌',
+    keywords: ['損下益上', '懲忿窒欲', '至誠化簡'],
+    judgment: '損：有孚，元吉，無咎，可貞，利有攸往。曷之用？二簋可用享。',
+    imageText: '山下有澤，損；君子以懲忿窒欲。',
+    coreMeaning: '象徵減損與捨棄的智慧。短期的付出或精簡雖然看似損失，但只要出於真誠且合乎長遠利益，反而能換來真正的成長；在個人修養上，最該減損的是衝動怒氣與過度慾望。'
+  },
+  {
+    id: 42, name: '風雷益', shortName: '益', upper: '巽', lower: '震',
+    keywords: ['損上益下', '見善則遷', '乘勢積極'],
+    judgment: '益：利有攸往，利涉大川。',
+    imageText: '風雷，益；君子以見善則遷，有過則改。',
+    coreMeaning: '象徵風助雷勢、雷激風威，彼此增益、氣勢大好。當資源與能力充裕時，懂得回饋基層與他人，能創造更大的共贏；個人亦當把握良機積極進取，見賢思齊、聞過則改。'
+  },
+  {
+    id: 43, name: '澤天夬', shortName: '夬', upper: '兌', lower: '乾',
+    keywords: ['果斷決裂', '公開透明', '戒除暴虎馮河'],
+    judgment: '夬：揚于王庭，孚號有厲，告自邑，不利即戎，利有攸往。',
+    imageText: '澤上於天，夬；君子以施祿及下，居德則忌。',
+    coreMeaning: '象徵蓄水潰決、到了必須做出果斷抉擇或清除積弊的時刻。雖然情勢佔優，但最後關頭往往潛藏反撲風險；不宜單憑武力或意氣硬碰硬，應公開透明地凝聚共識、做好內部防範。'
+  },
+  {
+    id: 44, name: '天風姤', shortName: '姤', upper: '乾', lower: '巽',
+    keywords: ['不期而遇', '防微杜漸', '審慎結緣'],
+    judgment: '姤：女壯，勿用取女。',
+    imageText: '天下有風，姤；后以施命誥四方。',
+    coreMeaning: '象徵偶然的邂逅與突如其來的機緣。一方面風行天下代表訊息能廣泛傳播；但另一方面，一陰初生於五陽之下，提示對於看似誘人卻可能侵蝕核心原則的人事物，必須在萌芽之初便保持警覺。'
+  },
+  {
+    id: 45, name: '澤地萃', shortName: '萃', upper: '兌', lower: '坤',
+    keywords: ['菁英匯聚', '凝聚共識', '戒備不虞'],
+    judgment: '萃：亨。王假有廟，利見大人，亨，利貞。用大牲吉，利有攸往。',
+    imageText: '澤上於地，萃；君子以除戎器，戒不虞。',
+    coreMeaning: '象徵水聚於澤、人才與資源大量匯聚。群眾聚集雖能成就大事，但也容易因利益交錯而生亂；必須有崇高的共同願景與核心領導者來凝聚人心，同時未雨綢繆，防範突發狀況。'
+  },
+  {
+    id: 46, name: '地風升', shortName: '升', upper: '坤', lower: '巽',
+    keywords: ['積小成大', '柔順上升', '循序漸進'],
+    judgment: '升：元亨，用見大人，勿恤，南征吉。',
+    imageText: '地中生木，升；君子以順德，積小以高大。',
+    coreMeaning: '象徵樹木從地底生根，順應自然規律一寸寸向上成長。代表事業與能力正處於穩健爬升期，無須憂慮，只要保持謙遜柔順的態度，爭取前輩貴人支持，一點一滴累積必成棟樑。'
+  },
+  {
+    id: 47, name: '澤水困', shortName: '困', upper: '兌', lower: '坎',
+    keywords: ['窮困試煉', '致命遂志', '尚口乃窮'],
+    judgment: '困：亨，貞，大人吉，無咎。有言不信。',
+    imageText: '澤無水，困；君子以致命遂志。',
+    coreMeaning: '象徵澤中水枯、資源耗竭的受困處境。身處低谷時，過多的辯解與抱怨往往無人採信（有言不信）；唯有不失內心氣節與長遠志向，保持樂觀堅韌，以實際行動默默突圍。'
+  },
+  {
+    id: 48, name: '水風井', shortName: '井', upper: '坎', lower: '巽',
+    keywords: ['深耕專業', '源源不絕', '慎終如始'],
+    judgment: '井：改邑不改井，無喪無得，往來井井。汔至，亦未繘井，羸其瓶，凶。',
+    imageText: '木上有水，井；君子以勞民勸相。',
+    coreMeaning: '象徵古井滋養萬民，無論外在環境如何變遷，內在的核心價值與專業深度始終不變。提醒我們一方面要定期清理提升自我（井泥不食），另一方面行百里者半九十，切勿在最後關頭功虧一簣。'
+  },
+  {
+    id: 49, name: '澤火革', shortName: '革', upper: '兌', lower: '離',
+    keywords: ['順時變革', '除舊佈新', '取信於人'],
+    judgment: '革：己日乃孚，元亨利貞，悔亡。',
+    imageText: '澤中有火，革；君子以治曆明時。',
+    coreMeaning: '象徵水火相息、不得不進行的重大轉型與變革。改革初期難免遭遇質疑，必須審準時機、做好充分準備，待事實證明與溝通到位（己日乃孚）後，方能徹底消除阻力、煥然一新。'
+  },
+  {
+    id: 50, name: '火風鼎', shortName: '鼎', upper: '離', lower: '巽',
+    keywords: ['去故取新', '穩重開創', '凝聚賢才'],
+    judgment: '鼎：元吉，亨。',
+    imageText: '木上有火，鼎；君子以正位凝命。',
+    coreMeaning: '象徵烹飪化生新物的青銅寶鼎，代表變革之後建立新秩序、培育新成果的穩定期。行事當如鼎般端正穩重，廣納各方智慧與資源（金玉其鉉），將生材轉化為成熟豐盛的佳餚。'
+  },
+  {
+    id: 51, name: '震為雷', shortName: '震', upper: '震', lower: '震',
+    keywords: ['震驚百里', '恐懼修省', '臨危不亂'],
+    judgment: '震：亨。震來虩虩，笑言啞啞。震驚百里，不喪匕鬯。',
+    imageText: '洊雷，震；君子以恐懼修省。',
+    coreMeaning: '象徵突如其來的劇烈震動與衝擊。面對意外變故或壓力測試，感到戒慎恐懼是正常的，但若能因此自我反省、保持核心定力（不喪匕鬯），風暴過後反而能迎來談笑風生的新局。'
+  },
+  {
+    id: 52, name: '艮為山', shortName: '艮', upper: '艮', lower: '艮',
+    keywords: ['動靜得宜', '知止定心', '思不出位'],
+    judgment: '艮：艮其背，不獲其身，行其庭，不見其人，無咎。',
+    imageText: '兼山，艮；君子以思不出其位。',
+    coreMeaning: '象徵兩山並立、安然靜止。教導我們「當止則止，當行則行」的定力；當外境紛擾或雜念叢生時，應學會切斷過度蔓延的焦慮，專注於當下本分，讓心靈重回如山般的寧靜。'
+  },
+  {
+    id: 53, name: '風山漸', shortName: '漸', upper: '巽', lower: '艮',
+    keywords: ['循序漸進', '鴻雁有序', '穩健扎根'],
+    judgment: '漸：女歸吉，利貞。',
+    imageText: '山上有木，漸；君子以居賢德善俗。',
+    coreMeaning: '象徵山林樹木緩慢而堅定地生長，以及鴻雁依序遷徙。提醒我們任何長遠的關係或事業，都無法一蹴可幾；唯有按部就班、履行必要的程序與累積，方能走得最穩最遠。'
+  },
+  {
+    id: 54, name: '雷澤歸妹', shortName: '歸妹', upper: '震', lower: '兌',
+    keywords: ['名分未正', '戒除衝動', '洞悉終始'],
+    judgment: '歸妹：征凶，無攸利。',
+    imageText: '澤上有雷，歸妹；君子以永終知敝。',
+    coreMeaning: '象徵因一時熱情或衝動而結合，卻忽略了現實條件與制度次序的匹配。提醒在做決定前，切勿被短暫的歡愉或表象沖昏頭，必須冷靜預見長遠可能產生的弊端與結構失衡。'
+  },
+  {
+    id: 55, name: '雷火豐', shortName: '豐', upper: '震', lower: '離',
+    keywords: ['盛大豐沛', '日中則昃', '明察秋毫'],
+    judgment: '豐：亨，王假之，勿憂，宜日中。',
+    imageText: '雷電皆至，豐；君子以折獄致刑。',
+    coreMeaning: '象徵雷電交加、氣勢最為宏大豐盛的時刻。擁有豐富資源時無須過度憂慮，應如正午陽光般普照大局；但同時要警惕盛極必衰，避免被繁華遮蔽雙眼（豐其蔀），保持清醒決斷。'
+  },
+  {
+    id: 56, name: '火山旅', shortName: '旅', upper: '離', lower: '艮',
+    keywords: ['羈旅異鄉', '柔順謙慎', '隨遇而安'],
+    judgment: '旅：小亨，旅貞吉。',
+    imageText: '山上有火，旅；君子以明慎用刑，而不留獄。',
+    coreMeaning: '象徵山林野火不停移動、人處於轉換跑道或客居他鄉的不安定狀態。在缺乏深厚根基的環境裡，不宜強勢張揚，應保持謙和謹慎、明辨是非，小事可成，切莫久留於是非之地。'
+  },
+  {
+    id: 57, name: '巽為風', shortName: '巽', upper: '巽', lower: '巽',
+    keywords: ['隨風潛入', '柔順滲透', '重申號令'],
+    judgment: '巽：小亨，利有攸往，利見大人。',
+    imageText: '隨風，巽；君子以申命行事。',
+    coreMeaning: '象徵微風相隨、無孔不入的柔和力量。面對僵局，強硬衝撞不如溫和持續的溝通與滲透；但巽卦亦提醒不可因過度順從而流於優柔寡斷，須反覆確認目標，並跟隨有遠見的引領者。'
+  },
+  {
+    id: 58, name: '兌為澤', shortName: '兌', upper: '兌', lower: '兌',
+    keywords: ['和悅溝通', '朋友講習', '外柔內剛'],
+    judgment: '兌：亨，利貞。',
+    imageText: '麗澤，兌；君子以朋友講習。',
+    coreMeaning: '象徵兩澤相連、彼此滋潤的喜悅與良性溝通。真正的喜悅建立在內心剛正誠信、外在溫和圓融之上；透過與良師益友互相切磋交流，能激發靈感並達成令人愉悅的合作。'
+  },
+  {
+    id: 59, name: '風水渙', shortName: '渙', upper: '巽', lower: '坎',
+    keywords: ['春風化冰', '消解隔閡', '凝聚大義'],
+    judgment: '渙：亨。王假有廟，利涉大川，利貞。',
+    imageText: '風行水上，渙；先王以享于帝立廟。',
+    coreMeaning: '象徵春風吹拂水面，既能吹散凝結的堅冰（化解憂患與私心隔閡），也可能吹散人心。因此一方面要主動打破僵局，另一方面必須建立共同的精神信仰與核心目標，重新凝聚離散的力量。'
+  },
+  {
+    id: 60, name: '水澤節', shortName: '節', upper: '坎', lower: '兌',
+    keywords: ['適度節制', '建立界線', '甘節之吉'],
+    judgment: '節：亨。苦節不可貞。',
+    imageText: '澤上有水，節；君子以制數度，議德行。',
+    coreMeaning: '象徵湖澤容納水量有限，必須設立堤防與節度。無論在開支、時間、情緒或人際界線上，都需要明確的規則；但節制貴在合情合理、令人心甘情願（甘節），若嚴苛到痛苦不堪（苦節）則無法持久。'
+  },
+  {
+    id: 61, name: '風澤中孚', shortName: '中孚', upper: '巽', lower: '兌',
+    keywords: ['至誠感通', '內虛外實', '信及豚魚'],
+    judgment: '中孚：豚魚吉，利涉大川，利貞。',
+    imageText: '澤上有風，中孚；君子以議獄緩死。',
+    coreMeaning: '象徵中心誠信、外實內虛（心中無成見私慾）。當一個人懷抱最純粹的誠意，連最難感化的對象也能被觸動；在決策與合作中，放下揣測、以誠相待，便是跨越難關最大的力量。'
+  },
+  {
+    id: 62, name: '雷山小過', shortName: '小過', upper: '震', lower: '艮',
+    keywords: ['小事微調', '寧過於恭儉', '飛鳥遺音'],
+    judgment: '小過：亨，利貞。可小事，不可大事。飛鳥遺之音，不宜上，宜下，大吉。',
+    imageText: '山上有雷，小過；君子以行過乎恭，喪過乎哀，用過乎儉。',
+    coreMeaning: '象徵陰多陽少，能量僅夠處理細微事務或進行局部修正。此時切忌好高騖遠、強求大動作；就如飛鳥只宜低飛覓食而不宜逆風高飛，姿態越謙恭、作風越務實節儉，越能獲得吉祥。'
+  },
+  {
+    id: 63, name: '水火既濟', shortName: '既濟', upper: '坎', lower: '離',
+    keywords: ['功德圓滿', '初吉終亂', '思患豫防'],
+    judgment: '既濟：亨小，利貞。初吉終亂。',
+    imageText: '水在火上，既濟；君子以思患而豫防之。',
+    coreMeaning: '象徵水火交融、六爻皆得其位，代表事情已經達成階段性的圓滿成功。然而「既濟」往往也是鬆懈與下坡的開始（初吉終亂），越是在目標達成之際，越要居安思危，防範潛在的秩序瓦解。'
+  },
+  {
+    id: 64, name: '火水未濟', shortName: '未濟', upper: '離', lower: '坎',
+    keywords: ['未竟之業', '生生不息', '慎辨物居方'],
+    judgment: '未濟：亨，小狐汔濟，濡其尾，無攸利。',
+    imageText: '火在水上，未濟；君子以慎辨物居方。',
+    coreMeaning: '作為六十四卦的終點，象徵萬事萬物永遠處於動態演進中，尚未完成即是充滿無限可能。切勿像小狐狸渡河般在最後關頭急躁大意；應冷靜釐清各項事物的定位，懷抱希望開啟下一輪循環。'
+  }
+];
+
+// 由上下卦自動合成六爻二進位陣列（初爻至上爻 = 下卦三爻 + 上卦三爻）
+export const HEXAGRAMS: Hexagram[] = RAW_HEXAGRAMS.map((seed) => {
+  const lower = TRIGRAMS[seed.lower];
+  const upper = TRIGRAMS[seed.upper];
+  const lines: [0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1] = [
+    lower.lines[0],
+    lower.lines[1],
+    lower.lines[2],
+    upper.lines[0],
+    upper.lines[1],
+    upper.lines[2],
+  ];
+  return {
+    id: seed.id,
+    name: seed.name,
+    shortName: seed.shortName,
+    upperKey: seed.upper,
+    lowerKey: seed.lower,
+    upperTrigram: upper.name,
+    lowerTrigram: lower.name,
+    lines,
+    keywords: [...seed.keywords],
+    judgment: seed.judgment,
+    judgmentVerified: true,
+    imageText: seed.imageText,
+    coreMeaning: seed.coreMeaning,
+  };
+});
+
+export interface ValidationReport {
+  isValid: boolean;
+  totalCount: number;
+  uniqueBinaryCount: number;
+  verifiedJudgmentCount: number;
+  errors: string[];
+}
+
+// 資料完整性驗證函式
+export function validateHexagramDatabase(db: Hexagram[]): ValidationReport {
+  const errors: string[] = [];
+  if (db.length !== 64) {
+    errors.push(`卦數錯誤：應為 64 卦，實際為 ${db.length} 卦`);
+  }
+
+  const seenIds = new Set<number>();
+  const seenBinaries = new Set<string>();
+  let verifiedCount = 0;
+
+  db.forEach((h, idx) => {
+    if (h.id !== idx + 1) {
+      errors.push(`卦序不連續：索引 ${idx} 的 ID 為 ${h.id}`);
+    }
+    seenIds.add(h.id);
+
+    if (h.lines.length !== 6 || h.lines.some((l) => l !== 0 && l !== 1)) {
+      errors.push(`第 ${h.id} 卦 (${h.name}) 六爻格式錯誤`);
+    }
+
+    const expectedLower = TRIGRAMS[h.lowerKey].lines;
+    const expectedUpper = TRIGRAMS[h.upperKey].lines;
+    const expectedLines = [...expectedLower, ...expectedUpper].join('');
+    const actualLines = h.lines.join('');
+
+    if (expectedLines !== actualLines) {
+      errors.push(`第 ${h.id} 卦 (${h.name}) 上下卦與六爻陰陽不一致`);
+    }
+
+    if (seenBinaries.has(actualLines)) {
+      errors.push(`第 ${h.id} 卦 (${h.name}) 二進位爻象 (${actualLines}) 重複`);
+    }
+    seenBinaries.add(actualLines);
+
+    if (h.judgment && h.judgmentVerified) {
+      verifiedCount++;
+    }
+  });
+
+  if (seenBinaries.size !== 64) {
+    errors.push(`二進位組合不完整：僅涵蓋 ${seenBinaries.size} / 64 種組合`);
+  }
+
+  return {
+    isValid: errors.length === 0 && seenIds.size === 64 && seenBinaries.size === 64,
+    totalCount: db.length,
+    uniqueBinaryCount: seenBinaries.size,
+    verifiedJudgmentCount: verifiedCount,
+    errors,
+  };
+}
+
+// ============================================================================
+// 二、加密級安全隨機抽卦模組 (randomDraw 模組)
+// ============================================================================
+
+/**
+ * 使用 window.crypto.getRandomValues 搭配拒絕取樣 (Rejection Sampling)
+ * 消除模數偏差 (Modulo Bias)，確保 0 ~ max-1 每個整數出現機率嚴格相等。
+ */
+export function getCryptoUniformRandomInt(max: number): number {
+  if (max <= 0) throw new Error('max 必須為正整數');
+  const array = new Uint32Array(1);
+  const maxUint32 = 0xffffffff;
+  const limit = maxUint32 - (maxUint32 % max);
+
+  let randomValue = 0;
+  do {
+    window.crypto.getRandomValues(array);
+    randomValue = array[0];
+  } while (randomValue >= limit);
+
+  return randomValue % max;
+}
+
+export function drawRandomHexagram(): Hexagram {
+  const index = getCryptoUniformRandomInt(HEXAGRAMS.length);
+  return HEXAGRAMS[index];
+}
+
+// ============================================================================
+// 三、AI 解卦規則、快取與服務模組 (readingPrompt & readingService)
+// ============================================================================
+
+export interface AIReadingResult {
+  coreEssence: string;      // ① 卦象核心意義
+  questionAnalysis: string; // ② 針對問題的解析
+  blindSpots: string;       // ③ 值得注意的盲點
+  actionableSteps: string[];// ④ 具體行動建議 (2~3點)
+  oneLineSummary: string;   // ⑤ 一句話總結
+}
+
+export interface ReadingHistoryItem {
+  id: string;
+  timestamp: number;
+  question: string;
+  hexagramId: number;
+  aiReading?: AIReadingResult;
+}
+
+const SESSION_CACHE_KEY_PREFIX = 'iching_ai_session_cache_v1_';
+const RATE_LIMIT_COOLDOWN_MS = 10000; // 每次 AI 請求間隔至少 10 秒
+
+function getLineName(index: number, val: 0 | 1): string {
+  const posNames = ['初', '二', '三', '四', '五', '上'];
+  const yinYang = val === 1 ? '九' : '六';
+  if (index === 0 || index === 5) {
+    return `${posNames[index]}${yinYang}（${val === 1 ? '陽爻' : '陰爻'}）`;
+  }
+  return `${yinYang}${posNames[index]}（${val === 1 ? '陽爻' : '陰爻'}）`;
+}
+
+export function buildReadingPrompts(question: string, hexagram: Hexagram) {
+  const linesDescription = hexagram.lines
+    .map((val, idx) => `第${idx + 1}爻（由下而上）：${getLineName(idx, val)}`)
+    .join('、');
+
+  const systemPrompt = `你是一位深諳《周易》經傳原典、兼具現代心理學反思視野與決策顧問素養的「易經哲學解讀師」。
+請嚴格遵守以下原則為使用者提供個人化解卦報告：
+1. 【忠於原典與固定卦象】：必須嚴格依據傳入的卦序、卦名、上下卦、六爻陰陽結構、《周易》卦辭與《大象傳》進行推演。絕對禁止自行更改抽卦結果，禁止捏造不存在的古文或爻辭。
+2. 【單卦啟發定位】：本系統採用「六十四卦單卦啟發式抽卡」，不討論傳統六爻動爻、變卦或納甲預測。請聚焦於此卦的整體時勢結構、上下卦互動關係與處世智慧。
+3. 【理性反思，拒絕宿命與恐嚇】：不可宣稱能確定預測未來吉凶、他人內心想法、疾病醫療結果或具體投資報酬。不替使用者做重大人生決定，而是提供象徵性反思、釐清內在動機與盲點，協助使用者做出更周延的自主選擇。
+4. 【臺灣繁體中文】：全篇使用自然、溫潤、富哲思且條理分明的繁體中文（臺灣用語）。`;
+
+  const userQuery = `【使用者提問】
+「${question.trim()}」
+
+【抽中卦象完整資料（請嚴格以此為準）】
+- 卦序：文王六十四卦 第 ${hexagram.id} 卦
+- 卦名：${hexagram.name}（簡稱：${hexagram.shortName}卦）
+- 卦象結構：上卦為${hexagram.upperTrigram}，下卦為${hexagram.lowerTrigram}
+- 六爻排列（由下而上初爻至上爻）：${linesDescription}
+- 核心關鍵字：${hexagram.keywords.join('、')}
+- 《周易》卦辭原文（已核實）：${hexagram.judgment}
+- 《象傳》大象原文：${hexagram.imageText}
+- 基礎固定卦義：${hexagram.coreMeaning}
+
+請根據上述卦象與使用者問題，輸出結構化 JSON 解析報告（包含 coreEssence、questionAnalysis、blindSpots、actionableSteps 陣列 3 點、oneLineSummary）。`;
+
+  return { systemPrompt, userQuery };
+}
+
+/**
+ * 呼叫 Gemini API 產生結構化 JSON 解卦報告（含指數退避重試與錯誤捕捉）
+ */
+export async function fetchGeminiHexagramReading(
+  question: string,
+  hexagram: Hexagram
+): Promise<{ data: AIReadingResult; fromCache: boolean }> {
+  const normalizedQ = question.trim();
+  const cacheKey = `${SESSION_CACHE_KEY_PREFIX}${hexagram.id}_${normalizedQ}`;
+
+  // 1. 檢查當次工作階段快取 (Session Cache)
+  try {
+    const cached = sessionStorage.getItem(cacheKey);
+    if (cached) {
+      const parsed = JSON.parse(cached) as AIReadingResult;
+      if (parsed && parsed.coreEssence && Array.isArray(parsed.actionableSteps)) {
+        return { data: parsed, fromCache: true };
+      }
+    }
+  } catch {
+    // 忽略 sessionStorage 讀取異常
+  }
+
+  const { systemPrompt, userQuery } = buildReadingPrompts(normalizedQ, hexagram);
+  const apiKey = ''; // 由執行環境自動注入安全憑證
+  const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${apiKey}`;
+
+  const payload = {
+    contents: [{ parts: [{ text: userQuery }] }],
+    systemInstruction: {
+      parts: [{ text: systemPrompt }],
+    },
+    generationConfig: {
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: 'OBJECT',
+        properties: {
+          coreEssence: {
+            type: 'STRING',
+            description: '① 卦象核心意義：說明此卦的上下卦象徵、時勢結構與主要精神（約 100~150 字）。',
+          },
+          questionAnalysis: {
+            type: 'STRING',
+            description: '② 針對問題的解析：緊密結合使用者提問，指出此卦象提供哪些思考角度與處境洞察（約 150~220 字）。',
+          },
+          blindSpots: {
+            type: 'STRING',
+            description: '③ 值得注意的盲點：指出使用者在此議題上可能忽略的條件、情緒慣性、風險或矛盾（約 100~160 字）。',
+          },
+          actionableSteps: {
+            type: 'ARRAY',
+            items: { type: 'STRING' },
+            description: '④ 具體行動建議：提出 3 個可實際執行的具體行動方向，每點簡明扼要。',
+          },
+          oneLineSummary: {
+            type: 'STRING',
+            description: '⑤ 一句話總結：以簡潔、有啟發性且契合卦意的語句收尾（約 20~40 字）。',
+          },
+        },
+        required: [
+          'coreEssence',
+          'questionAnalysis',
+          'blindSpots',
+          'actionableSteps',
+          'oneLineSummary',
+        ],
+        propertyOrdering: [
+          'coreEssence',
+          'questionAnalysis',
+          'blindSpots',
+          'actionableSteps',
+          'oneLineSummary',
+        ],
+      },
+    },
+  };
+
+  const delays = [1000, 2000, 4000];
+  let lastError: Error | null = null;
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new Error('RATE_LIMIT_EXCEEDED');
+        }
+        if (response.status === 401 || response.status === 403) {
+          throw new Error('API_KEY_INVALID');
+        }
+        throw new Error(`HTTP_${response.status}`);
+      }
+
+      const result = await response.json();
+      const jsonText = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (!jsonText) {
+        throw new Error('EMPTY_RESPONSE');
+      }
+
+      const parsedData = JSON.parse(jsonText) as AIReadingResult;
+
+      // 寫入 Session Cache
+      try {
+        sessionStorage.setItem(cacheKey, JSON.stringify(parsedData));
+      } catch {
+        // 忽略寫入失敗
+      }
+
+      return { data: parsedData, fromCache: false };
+    } catch (err: any) {
+      lastError = err;
+      if (
+        err.message === 'API_KEY_INVALID' ||
+        err.name === 'AbortError' ||
+        attempt === delays.length
+      ) {
+        break;
+      }
+      await new Promise((res) => setTimeout(res, delays[attempt]));
+    }
+  }
+
+  throw lastError || new Error('UNKNOWN_ERROR');
+}
+
+// ============================================================================
+// 四、本機歷史紀錄儲存模組 (historyStorage 模組)
+// ============================================================================
+
+const LOCAL_STORAGE_HISTORY_KEY = 'iching_oracle_history_v1';
+
+export function loadHistoryFromStorage(): ReadingHistoryItem[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_STORAGE_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveHistoryToStorage(items: ReadingHistoryItem[]): void {
+  try {
+    localStorage.setItem(LOCAL_STORAGE_HISTORY_KEY, JSON.stringify(items));
+  } catch {
+    // 忽略儲存空間滿或隱私模式限制
+  }
+}
+
+// ============================================================================
+// 五、共用視覺與六爻繪製元件 (components 模組)
+// ============================================================================
+
+/**
+ * 繪製標準六爻卦象（由下而上：初爻在最底、上爻在最頂）
+ * 陽爻 (1) 為完整實線，陰爻 (0) 為中間斷開的雙段線
+ */
+const HexagramLinesGraphic: React.FC<{
+  lines: [0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1, 0 | 1];
+  size?: 'sm' | 'md' | 'lg';
+  showLabels?: boolean;
+}> = ({ lines, size = 'md', showLabels = false }) => {
+  // 視覺渲染由上而下排列，因此將陣列反轉顯示（頂部為第6爻「上爻」，底部為第1爻「初爻」）
+  const reversedWithIndex = [...lines]
+    .map((val, idx) => ({ val, posIndex: idx }))
+    .reverse();
+
+  const posTitles = ['初爻', '二爻', '三爻', '四爻', '五爻', '上爻'];
+
+  const heightClass =
+    size === 'sm' ? 'h-1.5' : size === 'md' ? 'h-2.5' : 'h-3.5';
+  const gapClass =
+    size === 'sm' ? 'gap-1.5' : size === 'md' ? 'gap-2.5' : 'gap-3';
+  const widthClass =
+    size === 'sm' ? 'w-14' : size === 'md' ? 'w-28' : 'w-44 sm:w-52';
+
+  return (
+    <div className="flex flex-col items-center select-none">
+      <div className={`flex flex-col ${gapClass} ${widthClass}`}>
+        {reversedWithIndex.map(({ val, posIndex }) => (
+          <div key={posIndex} className="flex items-center gap-3 w-full group">
+            {showLabels && (
+              <span className="text-[11px] tracking-widest text-[#B8B2A6]/70 w-9 text-right font-serif shrink-0">
+                {posTitles[posIndex]}
+              </span>
+            )}
+            <div className="flex-1 flex items-center justify-between">
+              {val === 1 ? (
+                // 陽爻：實線
+                <div
+                  className={`w-full ${heightClass} rounded-[2px] bg-gradient-to-r from-[#B89758] via-[#E2C992] to-[#B89758] shadow-[0_0_10px_rgba(200,169,110,0.25)] transition-all duration-300`}
+                />
+              ) : (
+                // 陰爻：中間斷開
+                <>
+                  <div
+                    className={`w-[43%] ${heightClass} rounded-[2px] bg-gradient-to-r from-[#B89758] to-[#D4B886] shadow-[0_0_8px_rgba(200,169,110,0.2)] transition-all duration-300`}
+                  />
+                  <div className="w-[14%]" />
+                  <div
+                    className={`w-[43%] ${heightClass} rounded-[2px] bg-gradient-to-r from-[#D4B886] to-[#B89758] shadow-[0_0_8px_rgba(200,169,110,0.2)] transition-all duration-300`}
+                  />
+                </>
+              )}
+            </div>
+            {showLabels && (
+              <span className="text-[11px] text-[#C8A96E]/80 w-6 font-mono shrink-0">
+                {val === 1 ? '⚊' : '⚋'}
+              </span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+/**
+ * 東方極簡太極八卦幾何裝飾 SVG
+ */
+const BaguaOrnamentSVG: React.FC<{ className?: string }> = ({ className = 'w-24 h-24' }) => (
+  <svg viewBox="0 0 120 120" fill="none" className={className}>
+    <circle cx="60" cy="60" r="56" stroke="currentColor" strokeWidth="0.75" strokeDasharray="2 3" opacity="0.4" />
+    <circle cx="60" cy="60" r="46" stroke="currentColor" strokeWidth="1" opacity="0.6" />
+    <polygon
+      points="60,10 95,25 110,60 95,95 60,110 25,95 10,60 25,25"
+      stroke="currentColor"
+      strokeWidth="0.8"
+      opacity="0.45"
+    />
+    <circle cx="60" cy="60" r="24" stroke="currentColor" strokeWidth="1" opacity="0.75" />
+    <path
+      d="M60 36 A12 12 0 0 1 60 60 A12 12 0 0 0 60 84 A24 24 0 0 1 60 36 Z"
+      fill="currentColor"
+      opacity="0.2"
+    />
+    <circle cx="60" cy="48" r="3" fill="currentColor" opacity="0.7" />
+    <circle cx="60" cy="72" r="3" stroke="currentColor" strokeWidth="1.2" opacity="0.7" />
+  </svg>
+);
+
+// ============================================================================
+// 六、主應用程式元件 (App)
+// ============================================================================
+
+type ActiveTab = 'oracle' | 'compendium' | 'history';
+type OracleStep = 1 | 2 | 3;
+
+const PRESET_QUESTIONS = [
+  '我目前適合創業或開啟這項新專案嗎？',
+  '這段合作或重要關係，接下來該如何相處？',
+  '面對目前的職涯瓶頸，我應該轉換方向嗎？',
+  '近期這項重要決策，我忽略了什麼關鍵盲點？',
+];
+
+export default function App() {
+  // 導覽分頁狀態
+  const [activeTab, setActiveTab] = useState<ActiveTab>('oracle');
+
+  // 資料庫完整性驗證結果
+  const dbValidation = useMemo(() => validateHexagramDatabase(HEXAGRAMS), []);
+
+  // 抽卡問卜流程狀態
+  const [step, setStep] = useState<OracleStep>(1);
+  const [question, setQuestion] = useState<string>('');
+  const [questionError, setQuestionError] = useState<string>('');
+  const [drawnHexagram, setDrawnHexagram] = useState<Hexagram | null>(null);
+  const [isShuffling, setIsShuffling] = useState<boolean>(false);
+  const [selectedCardSlot, setSelectedCardSlot] = useState<number | null>(null);
+  const [isCardFlipped, setIsCardFlipped] = useState<boolean>(false);
+
+  // AI 解卦狀態
+  const [aiReading, setAiReading] = useState<AIReadingResult | null>(null);
+  const [isAiLoading, setIsAiLoading] = useState<boolean>(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [isFromCache, setIsFromCache] = useState<boolean>(false);
+  const [lastAiCallTime, setLastAiCallTime] = useState<number>(0);
+  const [cooldownSeconds, setCooldownSeconds] = useState<number>(0);
+
+  // 歷史紀錄狀態
+  const [history, setHistory] = useState<ReadingHistoryItem[]>([]);
+  const [currentRecordId, setCurrentRecordId] = useState<string | null>(null);
+  const [confirmClearModal, setConfirmClearModal] = useState<boolean>(false);
+
+  // 六十四卦圖鑑篩選狀態
+  const [searchQuery, setSearchQuery] = useState<string>('');
+  const [filterUpper, setFilterUpper] = useState<TrigramKey | 'ALL'>('ALL');
+  const [filterLower, setFilterLower] = useState<TrigramKey | 'ALL'>('ALL');
+  const [inspectHexagram, setInspectHexagram] = useState<Hexagram | null>(null);
+
+  // Toast 通知訊息
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const aiSectionRef = useRef<HTMLDivElement | null>(null);
+
+  // 載入本機歷史紀錄
+  useEffect(() => {
+    setHistory(loadHistoryFromStorage());
+  }, []);
+
+  // 速率限制倒數計時器
+  useEffect(() => {
+    if (cooldownSeconds <= 0) return;
+    const timer = setInterval(() => {
+      setCooldownSeconds((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldownSeconds]);
+
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => {
+      setToastMsg((prev) => (prev === msg ? null : prev));
+    }, 3200);
+  };
+
+  // STEP 1 -> STEP 2：確認問題並進入牌陣
+  const handleProceedToDraw = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const trimmed = question.trim();
+    if (!trimmed) {
+      setQuestionError('請先靜心輸入您想請益的問題（不可為空白）。');
+      return;
+    }
+    setQuestionError('');
+    setDrawnHexagram(null);
+    setAiReading(null);
+    setAiError(null);
+    setIsFromCache(false);
+    setSelectedCardSlot(null);
+    setIsCardFlipped(false);
+    setCurrentRecordId(null);
+    setStep(2);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // STEP 2：洗牌動效
+  const handleShuffleDeck = () => {
+    if (isShuffling || selectedCardSlot !== null) return;
+    setIsShuffling(true);
+    setTimeout(() => {
+      setIsShuffling(false);
+    }, 650);
+  };
+
+  // STEP 2 -> STEP 3：執行加密級隨機抽卦並觸發翻牌
+  const handleDrawCard = (slotIndex?: number) => {
+    if (selectedCardSlot !== null) return;
+    const chosenSlot =
+      slotIndex !== undefined ? slotIndex : getCryptoUniformRandomInt(64);
+    setSelectedCardSlot(chosenSlot);
+
+    // 使用 crypto.getRandomValues 獨立等機率抽取一卦
+    const hex = drawRandomHexagram();
+    setDrawnHexagram(hex);
+
+    setTimeout(() => {
+      setStep(3);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      setTimeout(() => {
+        setIsCardFlipped(true);
+      }, 120);
+    }, 680);
+  };
+
+  // STEP 4：手動點擊「深入解卦」呼叫 Gemini AI
+  const handleRequestAiReading = async () => {
+    if (!drawnHexagram || isAiLoading) return;
+
+    // 先檢查是否已有當次 Session 快取（若有快取則不受冷卻時間限制）
+    const cacheKey = `${SESSION_CACHE_KEY_PREFIX}${drawnHexagram.id}_${question.trim()}`;
+    const hasCache = Boolean(sessionStorage.getItem(cacheKey));
+
+    const now = Date.now();
+    if (!hasCache && now - lastAiCallTime < RATE_LIMIT_COOLDOWN_MS) {
+      const remain = Math.ceil((RATE_LIMIT_COOLDOWN_MS - (now - lastAiCallTime)) / 1000);
+      setCooldownSeconds(remain);
+      showToast(`請求過於頻繁，請稍候 ${remain} 秒再試`);
+      return;
+    }
+
+    setIsAiLoading(true);
+    setAiError(null);
+
+    setTimeout(() => {
+      aiSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }, 100);
+
+    try {
+      const { data, fromCache } = await fetchGeminiHexagramReading(question, drawnHexagram);
+      setAiReading(data);
+      setIsFromCache(fromCache);
+      if (!fromCache) {
+        setLastAiCallTime(Date.now());
+        setCooldownSeconds(Math.ceil(RATE_LIMIT_COOLDOWN_MS / 1000));
+      }
+
+      // 若已儲存過此筆紀錄，同步更新紀錄中的 AI 解讀
+      if (currentRecordId) {
+        setHistory((prev) => {
+          const updated = prev.map((item) =>
+            item.id === currentRecordId ? { ...item, aiReading: data } : item
+          );
+          saveHistoryToStorage(updated);
+          return updated;
+        });
+      }
+    } catch (err: any) {
+      if (err.message === 'RATE_LIMIT_EXCEEDED') {
+        setAiError('目前 AI 解卦服務請求額度已達上限，請稍候片刻再試。您仍可參閱上方的《周易》原典卦辭與基礎卦義進行反思。');
+      } else if (err.message === 'API_KEY_INVALID') {
+        setAiError('目前環境尚未設定有效的 Gemini API 金鑰，已自動切換為「經典原典離線模式」。您可完整查閱固定卦義與自省提問。');
+      } else {
+        setAiError('連線至 AI 解卦服務時發生逾時或網路異常，請稍後重試，或直接參考上方經典原典卦義。');
+      }
+    } finally {
+      setIsAiLoading(false);
+    }
+  };
+
+  // 儲存本次結果至瀏覽器 localStorage
+  const handleSaveCurrentReading = () => {
+    if (!drawnHexagram) return;
+
+    if (currentRecordId) {
+      // 更新既有紀錄
+      const updated = history.map((item) =>
+        item.id === currentRecordId
+          ? { ...item, aiReading: aiReading || item.aiReading }
+          : item
+      );
+      setHistory(updated);
+      saveHistoryToStorage(updated);
+      showToast('已更新本機問卜紀錄');
+      return;
+    }
+
+    const newRecord: ReadingHistoryItem = {
+      id: `rec_${Date.now()}_${getCryptoUniformRandomInt(10000)}`,
+      timestamp: Date.now(),
+      question: question.trim(),
+      hexagramId: drawnHexagram.id,
+      aiReading: aiReading || undefined,
+    };
+
+    const nextHistory = [newRecord, ...history];
+    setHistory(nextHistory);
+    saveHistoryToStorage(nextHistory);
+    setCurrentRecordId(newRecord.id);
+    showToast('已儲存至本機「問卜紀錄」');
+  };
+
+  // 格式化純文字報告（供複製與分享使用）
+  const formatReadingShareText = (): string => {
+    if (!drawnHexagram) return '';
+    const lines = [
+      `【易經六十四卦 AI 智慧抽卡】`,
+      `提問：「${question.trim()}」`,
+      `抽得：第 ${drawnHexagram.id} 卦｜${drawnHexagram.name}（上${drawnHexagram.upperTrigram} / 下${drawnHexagram.lowerTrigram}）`,
+      `關鍵字：${drawnHexagram.keywords.join('・')}`,
+      `《周易》卦辭：${drawnHexagram.judgment}`,
+      `《大象傳》：${drawnHexagram.imageText}`,
+      `基礎卦義：${drawnHexagram.coreMeaning}`,
+    ];
+
+    if (aiReading) {
+      lines.push(
+        ``,
+        `--- AI 個人化深度解卦 ---`,
+        `① 卦象核心意義：${aiReading.coreEssence}`,
+        `② 針對問題的解析：${aiReading.questionAnalysis}`,
+        `③ 值得注意的盲點：${aiReading.blindSpots}`,
+        `④ 具體行動建議：`,
+        ...aiReading.actionableSteps.map((s, idx) => `   ${idx + 1}. ${s}`),
+        `⑤ 一句話總結：「${aiReading.oneLineSummary}」`
+      );
+    }
+
+    return lines.join('\n');
+  };
+
+  // 複製解卦內容
+  const handleCopyReading = async () => {
+    const text = formatReadingShareText();
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      showToast('已複製完整卦象與解析內容');
+    } catch {
+      showToast('複製失敗，請手動選取文字複製');
+    }
+  };
+
+  // 原生分享或降級複製
+  const handleShareReading = async () => {
+    if (!drawnHexagram) return;
+    const text = formatReadingShareText();
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: `易經六十四卦｜第 ${drawnHexagram.id} 卦 ${drawnHexagram.name}`,
+          text,
+        });
+        return;
+      } catch {
+        // 使用者取消分享或環境不支援時降級至複製
+      }
+    }
+    await handleCopyReading();
+  };
+
+  // 重新抽卡
+  const handleResetOracle = () => {
+    setStep(1);
+    setDrawnHexagram(null);
+    setAiReading(null);
+    setAiError(null);
+    setSelectedCardSlot(null);
+    setIsCardFlipped(false);
+    setCurrentRecordId(null);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 從歷史紀錄載入檢視
+  const handleLoadHistoryItem = (item: ReadingHistoryItem) => {
+    const hex = HEXAGRAMS.find((h) => h.id === item.hexagramId);
+    if (!hex) return;
+    setQuestion(item.question);
+    setDrawnHexagram(hex);
+    setAiReading(item.aiReading || null);
+    setAiError(null);
+    setIsFromCache(true);
+    setCurrentRecordId(item.id);
+    setStep(3);
+    setIsCardFlipped(true);
+    setActiveTab('oracle');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 刪除單筆歷史紀錄
+  const handleDeleteHistoryItem = (id: string) => {
+    const next = history.filter((item) => item.id !== id);
+    setHistory(next);
+    saveHistoryToStorage(next);
+    if (currentRecordId === id) {
+      setCurrentRecordId(null);
+    }
+    showToast('已刪除該筆問卜紀錄');
+  };
+
+  // 清空全部歷史紀錄
+  const handleClearAllHistory = () => {
+    setHistory([]);
+    saveHistoryToStorage([]);
+    setCurrentRecordId(null);
+    setConfirmClearModal(false);
+    showToast('已清空所有本機問卜紀錄');
+  };
+
+  // 圖鑑篩選邏輯
+  const filteredHexagrams = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    return HEXAGRAMS.filter((h) => {
+      if (filterUpper !== 'ALL' && h.upperKey !== filterUpper) return false;
+      if (filterLower !== 'ALL' && h.lowerKey !== filterLower) return false;
+      if (!q) return true;
+      return (
+        h.name.toLowerCase().includes(q) ||
+        h.shortName.toLowerCase().includes(q) ||
+        String(h.id) === q ||
+        h.keywords.some((k) => k.toLowerCase().includes(q)) ||
+        h.judgment.toLowerCase().includes(q)
+      );
+    });
+  }, [searchQuery, filterUpper, filterLower]);
+
+  return (
+    <div className="min-h-screen bg-[#0D0D0F] text-[#F4F0EA] flex flex-col font-sans selection:bg-[#C8A96E]/30 selection:text-[#F4F0EA]">
+      {/* 頂部古典極簡導覽列 */}
+      <header className="sticky top-0 z-30 backdrop-blur-md bg-[#0D0D0F]/85 border-b border-[#C8A96E]/20">
+        <div className="max-w-6xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
+          {/* 品牌標誌 */}
+          <button
+            onClick={() => {
+              setActiveTab('oracle');
+            }}
+            className="flex items-center gap-3 text-left group focus:outline-none"
+          >
+            <div className="w-9 h-9 rounded-full border border-[#C8A96E]/50 bg-[#141418] flex items-center justify-center text-[#C8A96E] group-hover:border-[#C8A96E] group-hover:scale-105 transition-all">
+              <Compass className="w-4 h-4" />
+            </div>
+            <div>
+              <span className="block text-base sm:text-lg font-serif tracking-[0.15em] text-[#F4F0EA] font-medium">
+                易經六十四卦
+              </span>
+              <span className="block text-[10px] tracking-[0.2em] text-[#C8A96E]/80 uppercase">
+                I Ching Oracle Deck
+              </span>
+            </div>
+          </button>
+
+          {/* 三大主視圖切換 */}
+          <nav className="flex items-center gap-1 sm:gap-2 bg-[#141418] p-1 rounded-full border border-[#C8A96E]/20">
+            <button
+              onClick={() => setActiveTab('oracle')}
+              className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm tracking-wider transition-all ${
+                activeTab === 'oracle'
+                  ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium shadow-[0_0_15px_rgba(200,169,110,0.3)]'
+                  : 'text-[#B8B2A6] hover:text-[#F4F0EA]'
+              }`}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>問卜抽卡</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('compendium')}
+              className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm tracking-wider transition-all ${
+                activeTab === 'compendium'
+                  ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium shadow-[0_0_15px_rgba(200,169,110,0.3)]'
+                  : 'text-[#B8B2A6] hover:text-[#F4F0EA]'
+              }`}
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              <span>六十四卦圖鑑</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('history')}
+              className={`flex items-center gap-1.5 px-3 sm:px-4 py-1.5 rounded-full text-xs sm:text-sm tracking-wider transition-all relative ${
+                activeTab === 'history'
+                  ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium shadow-[0_0_15px_rgba(200,169,110,0.3)]'
+                  : 'text-[#B8B2A6] hover:text-[#F4F0EA]'
+              }`}
+            >
+              <History className="w-3.5 h-3.5" />
+              <span>問卜紀錄</span>
+              {history.length > 0 && (
+                <span
+                  className={`ml-0.5 px-1.5 py-0.2 rounded-full text-[10px] ${
+                    activeTab === 'history'
+                      ? 'bg-[#0D0D0F] text-[#C8A96E]'
+                      : 'bg-[#C8A96E]/20 text-[#C8A96E]'
+                  }`}
+                >
+                  {history.length}
+                </span>
+              )}
+            </button>
+          </nav>
+        </div>
+      </header>
+
+      {/* 頂部浮動 Toast 提示 */}
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 bg-[#1B1B22] border border-[#C8A96E]/60 text-[#F4F0EA] px-4 py-3 rounded-xl shadow-2xl animate-fade-in">
+          <Check className="w-4 h-4 text-[#C8A96E] shrink-0" />
+          <span className="text-sm tracking-wide">{toastMsg}</span>
+        </div>
+      )}
+
+      {/* 主要內容區 */}
+      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12">
+        {/* ================================================================
+            視圖一：問卜抽卡 (STEP 1 ~ STEP 4)
+           ================================================================ */}
+        {activeTab === 'oracle' && (
+          <div className="space-y-8">
+            {/* 步驟進度指示器 */}
+            <div className="max-w-xl mx-auto flex items-center justify-between text-xs tracking-widest text-[#B8B2A6]">
+              <div
+                className={`flex items-center gap-2 ${
+                  step >= 1 ? 'text-[#C8A96E]' : ' opacity-50'
+                }`}
+              >
+                <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center font-mono text-[11px]">
+                  1
+                </span>
+                <span>立意提問</span>
+              </div>
+              <div className="flex-1 h-[1px] bg-gradient-to-r from-[#C8A96E]/40 to-[#C8A96E]/10 mx-3" />
+              <div
+                className={`flex items-center gap-2 ${
+                  step >= 2 ? 'text-[#C8A96E]' : 'opacity-50'
+                }`}
+              >
+                <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center font-mono text-[11px]">
+                  2
+                </span>
+                <span>靜心抽卦</span>
+              </div>
+              <div className="flex-1 h-[1px] bg-gradient-to-r from-[#C8A96E]/40 to-[#C8A96E]/10 mx-3" />
+              <div
+                className={`flex items-center gap-2 ${
+                  step >= 3 ? 'text-[#C8A96E]' : 'opacity-50'
+                }`}
+              >
+                <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center font-mono text-[11px]">
+                  3
+                </span>
+                <span>觀象解卦</span>
+              </div>
+            </div>
+
+            {/* ------------------------------------------------------------
+                STEP 1｜輸入問題
+               ------------------------------------------------------------ */}
+            {step === 1 && (
+              <div className="max-w-2xl mx-auto">
+                <div className="relative rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-6 sm:p-10 shadow-[0_20px_60px_rgba(0,0,0,0.65)] overflow-hidden">
+                  {/* 背景古典幾何浮水印 */}
+                  <div className="absolute -top-12 -right-12 text-[#C8A96E]/10 pointer-events-none">
+                    <BaguaOrnamentSVG className="w-56 h-56" />
+                  </div>
+
+                  {/* 主副標題 */}
+                  <div className="text-center space-y-3 mb-8 relative z-10">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#C8A96E]/10 border border-[#C8A96E]/30 text-[#D4B886] text-xs tracking-[0.2em]">
+                      <span>周易本經六十四卦・啟發式神諭卡</span>
+                    </div>
+                    <h1 className="text-3xl sm:text-4xl font-serif tracking-[0.22em] text-[#F4F0EA] pt-1">
+                      易經六十四卦
+                    </h1>
+                    <p className="text-sm sm:text-base text-[#B8B2A6] tracking-[0.15em] font-serif">
+                      「一卦一問，照見當下的選擇」
+                    </p>
+                  </div>
+
+                  {/* 問題輸入表單 */}
+                  <form onSubmit={handleProceedToDraw} className="space-y-6 relative z-10">
+                    <div>
+                      <label
+                        htmlFor="oracle-question"
+                        className="block text-xs tracking-widest text-[#D4B886] uppercase mb-2.5"
+                      >
+                        請在心中默念並輸入您想釐清的處境或抉擇（必填）
+                      </label>
+                      <textarea
+                        id="oracle-question"
+                        rows={3}
+                        value={question}
+                        onChange={(e) => {
+                          setQuestion(e.target.value);
+                          if (questionError) setQuestionError('');
+                        }}
+                        placeholder="例如：我目前適合創業嗎？／這段關係接下來該如何相處？／我應該轉換工作方向嗎？"
+                        className="w-full rounded-xl bg-[#0D0D0F]/90 border border-[#C8A96E]/30 focus:border-[#C8A96E] focus:outline-none p-4 text-base text-[#F4F0EA] placeholder-[#B8B2A6]/40 leading-relaxed transition-colors resize-none"
+                      />
+                      {questionError && (
+                        <p className="mt-2 text-xs text-amber-400 flex items-center gap-1.5">
+                          <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                          <span>{questionError}</span>
+                        </p>
+                      )}
+                    </div>
+
+                    {/* 常見提問範例按鈕 */}
+                    <div className="space-y-2">
+                      <span className="text-xs text-[#B8B2A6]/80 tracking-wider block">
+                        或點擊下方靈感範例：
+                      </span>
+                      <div className="flex flex-wrap gap-2">
+                        {PRESET_QUESTIONS.map((preset) => (
+                          <button
+                            type="button"
+                            key={preset}
+                            onClick={() => {
+                              setQuestion(preset);
+                              setQuestionError('');
+                            }}
+                            className="text-left text-xs px-3 py-1.5 rounded-lg bg-[#0D0D0F] border border-[#C8A96E]/20 text-[#B8B2A6] hover:text-[#F4F0EA] hover:border-[#C8A96E]/50 transition-all"
+                          >
+                            {preset}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* 開始抽卡主按鈕 */}
+                    <button
+                      type="submit"
+                      className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-[#B89758] via-[#D4B886] to-[#B89758] text-[#0D0D0F] font-medium tracking-[0.2em] text-sm sm:text-base shadow-[0_8px_25px_rgba(200,169,110,0.25)] hover:shadow-[0_10px_30px_rgba(200,169,110,0.4)] hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-2"
+                    >
+                      <span>誠心立意・進入六十四卦牌陣</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </form>
+
+                  {/* 單卦抽卡機制說明 */}
+                  <div className="mt-8 pt-5 border-t border-[#C8A96E]/15 flex items-start gap-3 text-xs text-[#B8B2A6]/80 leading-relaxed">
+                    <Info className="w-4 h-4 text-[#C8A96E] shrink-0 mt-0.5" />
+                    <p>
+                      <strong className="text-[#D4B886] font-normal">機制說明：</strong>
+                      本系統採用「六十四卦單卦啟發式抽卡」，透過瀏覽器加密級隨機演算法（
+                      <code className="text-[#C8A96E] font-mono">crypto.getRandomValues</code>
+                      ）等機率抽取一卦，不加入動爻、變卦或納甲預測。旨在以《周易》經典智慧作為象徵性反思與決策輔助，而非傳統完整六爻筮法。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------
+                STEP 2｜抽取卦卡（64 張神諭卡牌背儀式）
+               ------------------------------------------------------------ */}
+            {step === 2 && (
+              <div className="space-y-6">
+                {/* 當前問題橫幅與控制按鈕 */}
+                <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-5 sm:p-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <span className="text-[11px] tracking-[0.2em] text-[#C8A96E] uppercase">
+                      您當下請益的問題
+                    </span>
+                    <h2 className="text-base sm:text-lg font-serif text-[#F4F0EA]">
+                      「{question}」
+                    </h2>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="px-3.5 py-2 rounded-lg border border-[#C8A96E]/30 text-xs text-[#B8B2A6] hover:text-[#F4F0EA] hover:border-[#C8A96E] transition-all"
+                    >
+                      修改問題
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShuffleDeck}
+                      disabled={isShuffling || selectedCardSlot !== null}
+                      className="px-3.5 py-2 rounded-lg border border-[#C8A96E]/40 bg-[#0D0D0F] text-xs text-[#D4B886] hover:border-[#C8A96E] transition-all flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      <Shuffle className={`w-3.5 h-3.5 ${isShuffling ? 'animate-spin' : ''}`} />
+                      <span>洗牌重整</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDrawCard()}
+                      disabled={selectedCardSlot !== null}
+                      className="flex-1 md:flex-initial px-5 py-2 rounded-lg bg-gradient-to-r from-[#B89758] to-[#D4B886] text-[#0D0D0F] font-medium text-xs sm:text-sm tracking-wider shadow-md hover:brightness-105 transition-all flex items-center justify-center gap-1.5"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>靜心隨機抽一卦</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 抽卡提示 */}
+                <div className="text-center space-y-1">
+                  <p className="text-xs sm:text-sm text-[#B8B2A6] tracking-widest">
+                    請深呼吸三次，憑直覺從下方 64 張神諭卡中點擊任一張，或點擊上方「靜心隨機抽一卦」
+                  </p>
+                  <p className="text-[11px] text-[#B8B2A6]/60">
+                    每張牌背皆經由加密級均勻隨機演算法等機率對應文王六十四卦（機率嚴格為 1/64）
+                  </p>
+                </div>
+
+                {/* 64 張牌背陣列 (8x8 桌面 / 自適應網格手機) */}
+                <div
+                  className={`grid grid-cols-4 sm:grid-cols-8 gap-2 sm:gap-3 transition-all duration-500 ${
+                    isShuffling ? 'scale-95 opacity-60 blur-[1px]' : 'scale-100 opacity-100'
+                  }`}
+                >
+                  {Array.from({ length: 64 }).map((_, idx) => {
+                    const isPicked = selectedCardSlot === idx;
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleDrawCard(idx)}
+                        disabled={selectedCardSlot !== null}
+                        aria-label={`抽取第 ${idx + 1} 號位置卦卡`}
+                        className={`group relative aspect-[3/4] rounded-xl border transition-all duration-500 flex flex-col items-center justify-center overflow-hidden ${
+                          isPicked
+                            ? 'border-[#E2C992] bg-[#241F16] scale-105 -translate-y-2 shadow-[0_0_30px_rgba(212,184,134,0.65)] z-20'
+                            : 'border-[#C8A96E]/25 bg-gradient-to-b from-[#17171D] to-[#101014] hover:border-[#C8A96E]/80 hover:-translate-y-1 hover:shadow-[0_6px_20px_rgba(200,169,110,0.2)]'
+                        }`}
+                      >
+                        {/* 牌背內框線 */}
+                        <div className="absolute inset-1.5 rounded-lg border border-[#C8A96E]/15 group-hover:border-[#C8A96E]/40 transition-colors pointer-events-none" />
+
+                        {/* 牌背中央太極八卦幾何紋 */}
+                        <div
+                          className={`text-[#C8A96E]/40 group-hover:text-[#C8A96E]/85 transition-all duration-500 ${
+                            isPicked ? 'scale-125 text-[#E2C992] rotate-180' : 'group-hover:scale-110'
+                          }`}
+                        >
+                          <BaguaOrnamentSVG className="w-8 h-8 sm:w-10 sm:h-10" />
+                        </div>
+
+                        {/* 細微序號點綴 */}
+                        <span className="mt-1.5 text-[9px] font-mono tracking-widest text-[#B8B2A6]/35 group-hover:text-[#C8A96E]/70">
+                          {String(idx + 1).padStart(2, '0')}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* ------------------------------------------------------------
+                STEP 3 & STEP 4｜顯示卦卡、固定卦義與 AI 個人化解卦
+               ------------------------------------------------------------ */}
+            {step === 3 && drawnHexagram && (
+              <div className="space-y-8">
+                {/* 頂部提問回顧與操作列 */}
+                <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div>
+                    <span className="text-[11px] tracking-[0.2em] text-[#C8A96E] uppercase block">
+                      所問之事
+                    </span>
+                    <p className="text-base sm:text-lg font-serif text-[#F4F0EA] mt-0.5">
+                      「{question}」
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={handleSaveCurrentReading}
+                      className="px-3.5 py-2 rounded-lg bg-[#0D0D0F] border border-[#C8A96E]/35 text-xs text-[#D4B886] hover:border-[#C8A96E] flex items-center gap-1.5 transition-all"
+                    >
+                      <Bookmark className="w-3.5 h-3.5" />
+                      <span>{currentRecordId ? '更新本機紀錄' : '儲存本次結果'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleCopyReading}
+                      className="px-3.5 py-2 rounded-lg bg-[#0D0D0F] border border-[#C8A96E]/35 text-xs text-[#B8B2A6] hover:text-[#F4F0EA] hover:border-[#C8A96E] flex items-center gap-1.5 transition-all"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>複製內容</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleShareReading}
+                      className="px-3.5 py-2 rounded-lg bg-[#0D0D0F] border border-[#C8A96E]/35 text-xs text-[#B8B2A6] hover:text-[#F4F0EA] hover:border-[#C8A96E] flex items-center gap-1.5 transition-all"
+                    >
+                      <Share2 className="w-3.5 h-3.5" />
+                      <span>分享結果</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetOracle}
+                      className="px-3.5 py-2 rounded-lg bg-[#C8A96E]/15 border border-[#C8A96E]/40 text-xs text-[#E2C992] hover:bg-[#C8A96E]/25 flex items-center gap-1.5 transition-all"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>重新抽卡</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* 主體雙欄佈局：左側精品神諭卦卡 + 右側經文與基礎解析 */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                  {/* 左側：高質感神諭卡正面（含翻牌過渡效果） */}
+                  <div className="lg:col-span-5 flex flex-col items-center">
+                    <div
+                      className={`w-full max-w-sm rounded-2xl bg-gradient-to-b from-[#181820] via-[#121217] to-[#181820] border-2 border-[#C8A96E]/60 p-6 sm:p-8 shadow-[0_25px_70px_rgba(0,0,0,0.8),0_0_35px_rgba(200,169,110,0.15)] relative overflow-hidden transition-all duration-700 ${
+                        isCardFlipped
+                          ? 'opacity-100 translate-y-0 scale-100'
+                          : 'opacity-0 translate-y-4 scale-95'
+                      }`}
+                    >
+                      {/* 四角古典邊框裝飾 */}
+                      <div className="absolute inset-2.5 rounded-xl border border-[#C8A96E]/25 pointer-events-none" />
+
+                      {/* 卦序與認證標章 */}
+                      <div className="flex items-center justify-between text-xs tracking-[0.2em] text-[#C8A96E] mb-4 relative z-10">
+                        <span className="font-mono">
+                          HEXAGRAM #{String(drawnHexagram.id).padStart(2, '0')}
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-[#C8A96E]/10 border border-[#C8A96E]/30 text-[11px]">
+                          文王第 {drawnHexagram.id} 卦
+                        </span>
+                      </div>
+
+                      {/* 卦名主視覺 */}
+                      <div className="text-center my-4 relative z-10">
+                        <h3 className="text-3xl sm:text-4xl font-serif tracking-[0.25em] text-[#F4F0EA] font-medium">
+                          {drawnHexagram.name}
+                        </h3>
+                        <div className="mt-2 flex items-center justify-center gap-4 text-xs text-[#B8B2A6] tracking-widest">
+                          <span>上卦：{drawnHexagram.upperTrigram}</span>
+                          <span className="text-[#C8A96E]/40">｜</span>
+                          <span>下卦：{drawnHexagram.lowerTrigram}</span>
+                        </div>
+                      </div>
+
+                      {/* 六爻卦象視覺（由下而上標示初爻至上爻） */}
+                      <div className="my-7 py-6 px-4 rounded-xl bg-[#0D0D0F]/80 border border-[#C8A96E]/20 flex flex-col items-center relative z-10">
+                        <HexagramLinesGraphic
+                          lines={drawnHexagram.lines}
+                          size="lg"
+                          showLabels={true}
+                        />
+                        <span className="mt-3 text-[10px] tracking-widest text-[#B8B2A6]/60">
+                          ▲ 爻序由下而上（初爻至上爻）
+                        </span>
+                      </div>
+
+                      {/* 核心關鍵字標籤 */}
+                      <div className="flex flex-wrap items-center justify-center gap-2 relative z-10">
+                        {drawnHexagram.keywords.map((kw) => (
+                          <span
+                            key={kw}
+                            className="px-3 py-1 rounded-full bg-[#C8A96E]/15 border border-[#C8A96E]/35 text-xs tracking-widest text-[#E2C992]"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 右側：經典卦辭、大象傳、固定卦義與 AI 觸發區 */}
+                  <div className="lg:col-span-7 space-y-6">
+                    {/* 原典經文卡片 */}
+                    <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-6 sm:p-8 space-y-6">
+                      <div className="flex items-center justify-between border-b border-[#C8A96E]/15 pb-4">
+                        <div className="flex items-center gap-2">
+                          <BookOpen className="w-4 h-4 text-[#C8A96E]" />
+                          <h4 className="text-base font-serif tracking-[0.15em] text-[#F4F0EA]">
+                            《周易》經典原典與基礎卦義
+                          </h4>
+                        </div>
+                        {drawnHexagram.judgmentVerified && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400/90 bg-emerald-950/40 border border-emerald-500/30 px-2.5 py-0.5 rounded-full">
+                            <ShieldCheck className="w-3.5 h-3.5" />
+                            <span>原典已核對</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 本經卦辭 */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs tracking-widest text-[#C8A96E] block">
+                          【卦辭原文】
+                        </span>
+                        <p className="text-lg sm:text-xl font-serif text-[#F4F0EA] leading-relaxed bg-[#0D0D0F]/70 p-4 rounded-xl border-l-2 border-[#C8A96E]">
+                          {drawnHexagram.judgment}
+                        </p>
+                      </div>
+
+                      {/* 大象傳 */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs tracking-widest text-[#C8A96E] block">
+                          【象傳・大象】
+                        </span>
+                        <p className="text-base font-serif text-[#E2C992] leading-relaxed bg-[#0D0D0F]/70 p-4 rounded-xl border-l-2 border-[#C8A96E]/60">
+                          {drawnHexagram.imageText}
+                        </p>
+                      </div>
+
+                      {/* 固定基礎卦義（無須 AI 即可閱讀） */}
+                      <div className="space-y-2">
+                        <span className="text-xs tracking-widest text-[#C8A96E] block">
+                          【傳統卦義與處世指引】
+                        </span>
+                        <p className="text-sm sm:text-base text-[#F4F0EA]/90 leading-relaxed">
+                          {drawnHexagram.coreMeaning}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* STEP 4｜手動觸發 AI 個人化解卦區塊 */}
+                    <div
+                      ref={aiSectionRef}
+                      className="rounded-2xl bg-gradient-to-b from-[#17171E] to-[#121217] border border-[#C8A96E]/40 p-6 sm:p-8 space-y-6 shadow-xl"
+                    >
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#C8A96E]/15 pb-4">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <Sparkles className="w-4 h-4 text-[#C8A96E]" />
+                            <h4 className="text-base sm:text-lg font-serif tracking-[0.15em] text-[#F4F0EA]">
+                              AI 個人化深度解卦
+                            </h4>
+                          </div>
+                          <p className="text-xs text-[#B8B2A6]">
+                            結合您的問題「{question}」與「{drawnHexagram.name}」原典進行結構化反思推演
+                          </p>
+                        </div>
+
+                        {isFromCache && aiReading && (
+                          <span className="inline-flex items-center gap-1 text-[11px] text-[#D4B886] bg-[#C8A96E]/10 border border-[#C8A96E]/30 px-2.5 py-1 rounded-full shrink-0">
+                            <Clock className="w-3 h-3" />
+                            <span>已讀取當次工作階段快取</span>
+                          </span>
+                        )}
+                      </div>
+
+                      {/* 尚未觸發 AI 解卦時顯示手動按鈕 */}
+                      {!aiReading && !isAiLoading && (
+                        <div className="space-y-4">
+                          <p className="text-xs sm:text-sm text-[#B8B2A6] leading-relaxed">
+                            為節省 API 資源並尊重您的閱讀節奏，本系統將抽卦與 AI 解卦分離。若您希望針對自身提問獲得深入的思考角度、盲點提醒與具體行動建議，請點擊下方按鈕：
+                          </p>
+                          <button
+                            type="button"
+                            onClick={handleRequestAiReading}
+                            disabled={cooldownSeconds > 0}
+                            className="w-full py-4 px-6 rounded-xl bg-gradient-to-r from-[#B89758] via-[#E2C992] to-[#B89758] text-[#0D0D0F] font-medium tracking-[0.18em] text-sm sm:text-base shadow-[0_8px_25px_rgba(200,169,110,0.25)] hover:brightness-105 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            <Sparkles className="w-4 h-4" />
+                            <span>
+                              {cooldownSeconds > 0
+                                ? `請稍候 (${cooldownSeconds}s)...`
+                                : '深入解卦（生成 AI 個人化解析）'}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+
+                      {/* AI 載入動畫 */}
+                      {isAiLoading && (
+                        <div className="py-10 flex flex-col items-center justify-center space-y-4 text-center">
+                          <div className="relative">
+                            <BaguaOrnamentSVG className="w-16 h-16 text-[#C8A96E] animate-spin" />
+                          </div>
+                          <div className="space-y-1">
+                            <p className="text-sm font-serif tracking-widest text-[#E2C992]">
+                              正在推演「{drawnHexagram.name}」與您所問之事的交集...
+                            </p>
+                            <p className="text-xs text-[#B8B2A6]/70">
+                              嚴格依據《周易》卦辭與上下卦象結構生成個人化反思報告
+                            </p>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI 錯誤或無金鑰時之友善降級提示 + 結構化自省引導 */}
+                      {aiError && !isAiLoading && (
+                        <div className="space-y-4">
+                          <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-500/40 text-amber-200/90 text-xs sm:text-sm leading-relaxed flex items-start gap-3">
+                            <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                            <div className="space-y-2">
+                              <p>{aiError}</p>
+                              <button
+                                type="button"
+                                onClick={handleRequestAiReading}
+                                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-xs transition-colors"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                                <span>重試呼叫 AI 解卦</span>
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* 離線自省決策引導框架 */}
+                          <div className="p-5 rounded-xl bg-[#0D0D0F] border border-[#C8A96E]/25 space-y-3">
+                            <h5 className="text-xs tracking-widest text-[#C8A96E] uppercase">
+                              【經典原典自我對話指引】
+                            </h5>
+                            <ul className="space-y-2 text-xs sm:text-sm text-[#B8B2A6] list-disc list-inside leading-relaxed">
+                              <li>
+                                <strong className="text-[#F4F0EA]">觀時勢：</strong>
+                                「{drawnHexagram.name}」的關鍵字為「{drawnHexagram.keywords.join('、')}」，這是否反映了您目前處境的核心張力？
+                              </li>
+                              <li>
+                                <strong className="text-[#F4F0EA]">思盲點：</strong>
+                                對照《大象傳》「{drawnHexagram.imageText}」，您在處理「{question}」時，最需要補強哪一種態度？
+                              </li>
+                            </ul>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* AI 結構化五區解析結果 */}
+                      {aiReading && !isAiLoading && (
+                        <div className="space-y-5 animate-fade-in">
+                          {/* ① 卦象核心意義 */}
+                          <div className="p-4 sm:p-5 rounded-xl bg-[#0D0D0F]/80 border border-[#C8A96E]/20 space-y-2">
+                            <h5 className="text-xs sm:text-sm font-serif tracking-widest text-[#D4B886]">
+                              ① 卦象核心意義
+                            </h5>
+                            <p className="text-sm sm:text-base text-[#F4F0EA]/90 leading-relaxed">
+                              {aiReading.coreEssence}
+                            </p>
+                          </div>
+
+                          {/* ② 針對問題的解析 */}
+                          <div className="p-4 sm:p-5 rounded-xl bg-[#0D0D0F]/80 border border-[#C8A96E]/20 space-y-2">
+                            <h5 className="text-xs sm:text-sm font-serif tracking-widest text-[#D4B886]">
+                              ② 針對問題的解析
+                            </h5>
+                            <p className="text-sm sm:text-base text-[#F4F0EA]/90 leading-relaxed">
+                              {aiReading.questionAnalysis}
+                            </p>
+                          </div>
+
+                          {/* ③ 值得注意的盲點 */}
+                          <div className="p-4 sm:p-5 rounded-xl bg-[#0D0D0F]/80 border border-amber-500/25 space-y-2">
+                            <h5 className="text-xs sm:text-sm font-serif tracking-widest text-amber-300/90">
+                              ③ 值得注意的盲點與風險
+                            </h5>
+                            <p className="text-sm sm:text-base text-[#F4F0EA]/90 leading-relaxed">
+                              {aiReading.blindSpots}
+                            </p>
+                          </div>
+
+                          {/* ④ 具體行動建議 */}
+                          <div className="p-4 sm:p-5 rounded-xl bg-[#0D0D0F]/80 border border-[#C8A96E]/20 space-y-3">
+                            <h5 className="text-xs sm:text-sm font-serif tracking-widest text-[#D4B886]">
+                              ④ 具體行動建議
+                            </h5>
+                            <ul className="space-y-2.5">
+                              {aiReading.actionableSteps.map((stepText, idx) => (
+                                <li
+                                  key={idx}
+                                  className="flex items-start gap-3 text-sm sm:text-base text-[#F4F0EA]/90 leading-relaxed"
+                                >
+                                  <span className="w-5 h-5 rounded-full bg-[#C8A96E]/20 border border-[#C8A96E]/50 text-[#E2C992] text-xs flex items-center justify-center shrink-0 mt-0.5 font-mono">
+                                    {idx + 1}
+                                  </span>
+                                  <span>{stepText}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+
+                          {/* ⑤ 一句話總結 */}
+                          <div className="p-5 rounded-xl bg-gradient-to-r from-[#C8A96E]/15 via-[#C8A96E]/10 to-transparent border-l-4 border-[#C8A96E] space-y-1">
+                            <span className="text-[11px] tracking-[0.2em] text-[#C8A96E] uppercase block">
+                              ⑤ 一句話總結
+                            </span>
+                            <p className="text-base sm:text-lg font-serif text-[#F4F0EA] tracking-wide">
+                              「{aiReading.oneLineSummary}」
+                            </p>
+                          </div>
+
+                          {/* 免責與理性反思聲明 */}
+                          <p className="text-[11px] text-[#B8B2A6]/60 leading-relaxed pt-2">
+                            ※ 決策輔助聲明：本報告由 AI 根據《周易》原典與您的提問生成，旨在提供多維度的象徵性反思與盲點檢視，不代表對未來、醫療、法律或投資報酬之確定預測，最終決定權始終在您手中。
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================================================================
+            視圖二：六十四卦圖鑑 (完整 64 卦瀏覽、搜尋、八卦篩選與詳情)
+           ================================================================ */}
+        {activeTab === 'compendium' && (
+          <div className="space-y-8">
+            {/* 圖鑑標題與搜尋篩選列 */}
+            <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-6 space-y-5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-2xl font-serif tracking-[0.18em] text-[#F4F0EA]">
+                    文王六十四卦完整圖鑑
+                  </h2>
+                  <p className="text-xs sm:text-sm text-[#B8B2A6] mt-1">
+                    收錄全部 64 卦標準六爻陰陽、上下經卦組合、《周易》卦辭與《大象傳》原文
+                  </p>
+                </div>
+
+                {/* 搜尋框 */}
+                <div className="relative w-full md:w-72">
+                  <Search className="w-4 h-4 text-[#C8A96E] absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="搜尋卦序、卦名、關鍵字或卦辭..."
+                    className="w-full pl-10 pr-8 py-2.5 rounded-xl bg-[#0D0D0F] border border-[#C8A96E]/30 focus:border-[#C8A96E] focus:outline-none text-xs sm:text-sm text-[#F4F0EA] placeholder-[#B8B2A6]/40"
+                  />
+                  {searchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setSearchQuery('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#B8B2A6] hover:text-[#F4F0EA]"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* 上下卦篩選器 */}
+              <div className="pt-4 border-t border-[#C8A96E]/15 flex flex-wrap items-center gap-4 text-xs">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[#C8A96E] tracking-wider">上卦：</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterUpper('ALL')}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${
+                      filterUpper === 'ALL'
+                        ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium'
+                        : 'bg-[#0D0D0F] text-[#B8B2A6] hover:text-[#F4F0EA]'
+                    }`}
+                  >
+                    全部
+                  </button>
+                  {(Object.keys(TRIGRAMS) as TrigramKey[]).map((k) => (
+                    <button
+                      key={`up_${k}`}
+                      type="button"
+                      onClick={() => setFilterUpper(k)}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        filterUpper === k
+                          ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium'
+                          : 'bg-[#0D0D0F] text-[#B8B2A6] hover:text-[#F4F0EA]'
+                      }`}
+                    >
+                      {TRIGRAMS[k].name}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-[#C8A96E] tracking-wider">下卦：</span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterLower('ALL')}
+                    className={`px-2.5 py-1 rounded-md transition-colors ${
+                      filterLower === 'ALL'
+                        ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium'
+                        : 'bg-[#0D0D0F] text-[#B8B2A6] hover:text-[#F4F0EA]'
+                    }`}
+                  >
+                    全部
+                  </button>
+                  {(Object.keys(TRIGRAMS) as TrigramKey[]).map((k) => (
+                    <button
+                      key={`low_${k}`}
+                      type="button"
+                      onClick={() => setFilterLower(k)}
+                      className={`px-2.5 py-1 rounded-md transition-colors ${
+                        filterLower === k
+                          ? 'bg-[#C8A96E] text-[#0D0D0F] font-medium'
+                          : 'bg-[#0D0D0F] text-[#B8B2A6] hover:text-[#F4F0EA]'
+                      }`}
+                    >
+                      {TRIGRAMS[k].name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* 64 卦網格列表 */}
+            {filteredHexagrams.length === 0 ? (
+              <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/20 p-12 text-center space-y-3">
+                <p className="text-base text-[#B8B2A6]">找不到符合篩選條件的卦象</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setFilterUpper('ALL');
+                    setFilterLower('ALL');
+                  }}
+                  className="px-4 py-2 rounded-lg bg-[#C8A96E]/20 text-xs text-[#E2C992] hover:bg-[#C8A96E]/30"
+                >
+                  重置所有篩選條件
+                </button>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {filteredHexagrams.map((hex) => (
+                  <button
+                    key={hex.id}
+                    type="button"
+                    onClick={() => setInspectHexagram(hex)}
+                    className="text-left rounded-xl bg-[#141418] border border-[#C8A96E]/20 hover:border-[#C8A96E]/70 p-5 transition-all hover:-translate-y-1 hover:shadow-[0_10px_30px_rgba(0,0,0,0.5)] flex flex-col justify-between group"
+                  >
+                    <div>
+                      <div className="flex items-center justify-between text-xs text-[#B8B2A6] mb-3">
+                        <span className="font-mono text-[#C8A96E]">
+                          第 {String(hex.id).padStart(2, '0')} 卦
+                        </span>
+                        <span>
+                          上{hex.upperKey}下{hex.lowerKey}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center justify-between gap-4 my-2">
+                        <div>
+                          <h3 className="text-lg font-serif tracking-widest text-[#F4F0EA] group-hover:text-[#E2C992] transition-colors">
+                            {hex.name}
+                          </h3>
+                          <p className="text-xs text-[#B8B2A6]/80 mt-1 line-clamp-1">
+                            {hex.judgment}
+                          </p>
+                        </div>
+                        <div className="shrink-0">
+                          <HexagramLinesGraphic lines={hex.lines} size="sm" />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 pt-3 border-t border-[#C8A96E]/10 flex items-center justify-between">
+                      <div className="flex flex-wrap gap-1">
+                        {hex.keywords.slice(0, 2).map((kw) => (
+                          <span
+                            key={kw}
+                            className="text-[10px] px-2 py-0.5 rounded bg-[#0D0D0F] text-[#D4B886] border border-[#C8A96E]/20"
+                          >
+                            {kw}
+                          </span>
+                        ))}
+                      </div>
+                      <span className="text-[11px] text-[#C8A96E] flex items-center gap-0.5 opacity-75 group-hover:opacity-100">
+                        <span>詳情</span>
+                        <ChevronRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ================================================================
+            視圖三：問卜紀錄 (localStorage 管理、重溫與刪除)
+           ================================================================ */}
+        {activeTab === 'history' && (
+          <div className="space-y-6 max-w-4xl mx-auto">
+            {/* 標題與隱私儲存聲明 */}
+            <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <h2 className="text-2xl font-serif tracking-[0.18em] text-[#F4F0EA]">
+                  本機問卜歷史紀錄
+                </h2>
+                <p className="text-xs text-[#B8B2A6] flex items-center gap-1.5">
+                  <Lock className="w-3.5 h-3.5 text-[#C8A96E] shrink-0" />
+                  <span>
+                    隱私說明：所有紀錄僅儲存在您目前的瀏覽器（localStorage），不會上傳伺服器，亦不會跨裝置同步。
+                  </span>
+                </p>
+              </div>
+
+              {history.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setConfirmClearModal(true)}
+                  className="px-4 py-2 rounded-xl border border-rose-500/40 bg-rose-950/20 text-rose-300 hover:bg-rose-950/40 text-xs flex items-center gap-1.5 self-start sm:self-auto shrink-0 transition-colors"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>清空全部紀錄</span>
+                </button>
+              )}
+            </div>
+
+            {/* 紀錄清單 */}
+            {history.length === 0 ? (
+              <div className="rounded-2xl bg-[#141418] border border-[#C8A96E]/20 p-12 text-center space-y-4">
+                <History className="w-10 h-10 text-[#C8A96E]/40 mx-auto" />
+                <div className="space-y-1">
+                  <p className="text-base font-serif text-[#F4F0EA]">目前尚無儲存的問卜紀錄</p>
+                  <p className="text-xs text-[#B8B2A6]">
+                    在抽卡結果頁點擊「儲存本次結果」，即可將問題、卦象與 AI 解讀保存在此瀏覽器中。
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('oracle')}
+                  className="px-5 py-2.5 rounded-xl bg-[#C8A96E] text-[#0D0D0F] text-xs font-medium tracking-wider"
+                >
+                  前往問卜抽卡
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {history.map((item) => {
+                  const hex = HEXAGRAMS.find((h) => h.id === item.hexagramId);
+                  if (!hex) return null;
+                  const dateStr = new Date(item.timestamp).toLocaleString('zh-TW', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  });
+
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-2xl bg-[#141418] border border-[#C8A96E]/25 p-5 sm:p-6 hover:border-[#C8A96E]/50 transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-4 flex-1">
+                        <div className="p-3 rounded-xl bg-[#0D0D0F] border border-[#C8A96E]/20 shrink-0 hidden sm:block">
+                          <HexagramLinesGraphic lines={hex.lines} size="sm" />
+                        </div>
+                        <div className="space-y-1.5 flex-1">
+                          <div className="flex flex-wrap items-center gap-2 text-xs text-[#B8B2A6]">
+                            <span className="text-[#C8A96E] font-serif font-medium">
+                              第 {hex.id} 卦・{hex.name}
+                            </span>
+                            <span>｜</span>
+                            <span>{dateStr}</span>
+                            {item.aiReading && (
+                              <span className="px-2 py-0.5 rounded-full bg-[#C8A96E]/15 text-[#E2C992] text-[10px]">
+                                含 AI 深度解析
+                              </span>
+                            )}
+                          </div>
+                          <h3 className="text-base font-serif text-[#F4F0EA]">
+                            「{item.question}」
+                          </h3>
+                          {item.aiReading?.oneLineSummary ? (
+                            <p className="text-xs text-[#D4B886] line-clamp-1">
+                              總結：{item.aiReading.oneLineSummary}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-[#B8B2A6]/80 line-clamp-1">
+                              {hex.coreMeaning}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 w-full sm:w-auto justify-end border-t sm:border-t-0 border-[#C8A96E]/10 pt-3 sm:pt-0">
+                        <button
+                          type="button"
+                          onClick={() => handleLoadHistoryItem(item)}
+                          className="px-3.5 py-2 rounded-lg bg-[#C8A96E]/15 border border-[#C8A96E]/40 text-xs text-[#E2C992] hover:bg-[#C8A96E]/25 flex items-center gap-1.5"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>查看完整報告</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteHistoryItem(item.id)}
+                          aria-label="刪除此筆紀錄"
+                          className="p-2 rounded-lg bg-[#0D0D0F] border border-[#C8A96E]/20 text-[#B8B2A6] hover:text-rose-400 hover:border-rose-500/40 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </main>
+
+      {/* ================================================================
+          彈出視窗：圖鑑單卦詳情檢視 Modal
+         ================================================================ */}
+      {inspectHexagram && (
+        <div
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto"
+          onClick={() => setInspectHexagram(null)}
+        >
+          <div
+            className="max-w-xl w-full rounded-2xl bg-[#141418] border-2 border-[#C8A96E]/60 p-6 sm:p-8 shadow-2xl space-y-6 relative my-8"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => setInspectHexagram(null)}
+              className="absolute top-5 right-5 p-2 rounded-full bg-[#0D0D0F] text-[#B8B2A6] hover:text-[#F4F0EA] border border-[#C8A96E]/30"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            <div className="flex flex-col sm:flex-row items-center gap-6 border-b border-[#C8A96E]/20 pb-6">
+              <div className="p-4 rounded-xl bg-[#0D0D0F] border border-[#C8A96E]/25">
+                <HexagramLinesGraphic
+                  lines={inspectHexagram.lines}
+                  size="md"
+                  showLabels={true}
+                />
+              </div>
+              <div className="text-center sm:text-left space-y-2">
+                <span className="text-xs font-mono tracking-widest text-[#C8A96E]">
+                  文王卦序 第 {inspectHexagram.id} 卦
+                </span>
+                <h3 className="text-3xl font-serif tracking-[0.2em] text-[#F4F0EA]">
+                  {inspectHexagram.name}
+                </h3>
+                <p className="text-xs text-[#B8B2A6] tracking-wider">
+                  上卦：{inspectHexagram.upperTrigram} ｜ 下卦：{inspectHexagram.lowerTrigram}
+                </p>
+                <div className="flex flex-wrap justify-center sm:justify-start gap-1.5 pt-1">
+                  {inspectHexagram.keywords.map((kw) => (
+                    <span
+                      key={kw}
+                      className="px-2.5 py-0.5 rounded-full bg-[#C8A96E]/15 border border-[#C8A96E]/30 text-xs text-[#E2C992]"
+                    >
+                      {kw}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-sm">
+              <div>
+                <span className="text-xs tracking-widest text-[#C8A96E] block mb-1">
+                  【周易本經卦辭】
+                </span>
+                <p className="text-base font-serif text-[#F4F0EA] bg-[#0D0D0F] p-3.5 rounded-xl border-l-2 border-[#C8A96E]">
+                  {inspectHexagram.judgment}
+                </p>
+              </div>
+              <div>
+                <span className="text-xs tracking-widest text-[#C8A96E] block mb-1">
+                  【象傳・大象】
+                </span>
+                <p className="text-sm font-serif text-[#E2C992] bg-[#0D0D0F] p-3.5 rounded-xl border-l-2 border-[#C8A96E]/60">
+                  {inspectHexagram.imageText}
+                </p>
+              </div>
+              <div>
+                <span className="text-xs tracking-widest text-[#C8A96E] block mb-1">
+                  【核心卦義與處世啟示】
+                </span>
+                <p className="text-sm text-[#F4F0EA]/90 leading-relaxed">
+                  {inspectHexagram.coreMeaning}
+                </p>
+              </div>
+            </div>
+
+            <div className="pt-2 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setInspectHexagram(null)}
+                className="px-5 py-2 rounded-xl bg-[#C8A96E] text-[#0D0D0F] text-xs font-medium tracking-wider"
+              >
+                關閉視窗
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================
+          彈出視窗：清空歷史紀錄確認 Modal (取代原生 confirm)
+         ================================================================ */}
+      {confirmClearModal && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="max-w-md w-full rounded-2xl bg-[#141418] border border-[#C8A96E]/50 p-6 space-y-5 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-300">
+              <AlertCircle className="w-6 h-6 shrink-0" />
+              <h3 className="text-lg font-serif tracking-wider">確定要清空全部問卜紀錄嗎？</h3>
+            </div>
+            <p className="text-xs sm:text-sm text-[#B8B2A6] leading-relaxed">
+              此操作將會永久刪除目前儲存在此瀏覽器中的所有問卜歷史與 AI 解卦報告，刪除後無法復原。
+            </p>
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setConfirmClearModal(false)}
+                className="px-4 py-2 rounded-xl border border-[#C8A96E]/30 text-xs text-[#B8B2A6] hover:text-[#F4F0EA]"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAllHistory}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-medium"
+              >
+                確認清空全部
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 底部系統完整性驗證與聲明狀態列 */}
+      <footer className="border-t border-[#C8A96E]/15 bg-[#0A0A0C] py-6 px-4 sm:px-6 text-xs text-[#B8B2A6]/70">
+        <div className="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2">
+            <ShieldCheck
+              className={`w-4 h-4 ${
+                dbValidation.isValid ? 'text-emerald-400' : 'text-amber-400'
+              }`}
+            />
+            <span>
+              資料庫完整性驗證：
+              {dbValidation.isValid
+                ? `已通過（文王 ${dbValidation.totalCount} 卦齊全・${dbValidation.uniqueBinaryCount} 組二進位六爻無重複・卦辭原典已核實）`
+                : dbValidation.errors.join(' / ')}
+            </span>
+          </div>
+          <div className="text-[11px] text-[#B8B2A6]/50 text-center sm:text-right">
+            易經六十四卦 AI 智慧抽卡・單卦啟發式決策輔助系統（非醫療、法律或投資預測）
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}

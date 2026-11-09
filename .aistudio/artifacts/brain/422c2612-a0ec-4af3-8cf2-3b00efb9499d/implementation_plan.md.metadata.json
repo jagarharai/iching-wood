@@ -1,0 +1,6 @@
+{
+  "summary":  "易經六十四卦 AI 智慧抽卡系統的完整實作計畫，涵蓋單一 App.tsx 架構保留、後端 Express + @google/genai SDK 結構化解卦代理、圖鑑直通請益捷徑，以及解卦報告匯出圖片與 Markdown 功能。",
+  "updatedAt":  "2026-11-08T21:27:16.350313590Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

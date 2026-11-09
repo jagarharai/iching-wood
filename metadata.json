@@ -1,0 +1,6 @@
+{
+  "name": "易經六十四卦 AI 智慧抽卡",
+  "description": "結合《周易》本經六十四卦原典、加密級均勻隨機抽卡儀式與 Gemini AI 結構化哲學解卦的互動式決策輔助系統。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
